@@ -74,13 +74,15 @@ button{cursor:pointer}
 .chip.fav{border-style:dashed}
 
 .board{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;padding:8px 16px;cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:pan-y}
-.cardbox{width:min(100%,1500px);flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(6px,1.6vmin,18px);background:var(--panel);border-radius:clamp(20px,4vmin,44px);box-shadow:0 2px 0 var(--line),0 12px 40px rgba(60,40,120,.07);padding:clamp(10px,2vmin,28px);border:2px solid var(--line);overflow:hidden;position:relative}
-.cap{min-height:1.6em;display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;color:var(--muted);font-size:clamp(.95rem,2.3vmin,1.4rem);text-align:center}
+.cardbox{width:min(100%,1500px);flex:1;min-height:0;background:var(--panel);border-radius:clamp(20px,4vmin,44px);box-shadow:0 2px 0 var(--line),0 12px 40px rgba(60,40,120,.07);border:2px solid var(--line);overflow:hidden;position:relative}
+.top{position:absolute;left:0;right:0;top:0;padding:clamp(8px,1.6vmin,20px) 16px 0;display:flex;justify-content:center;pointer-events:none}
+.bot{position:absolute;left:0;right:0;bottom:0;padding:0 16px clamp(8px,1.6vmin,16px);display:flex;flex-direction:column;align-items:center;gap:clamp(6px,1.4vmin,14px);pointer-events:none}
+.cap{min-height:0;display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;color:var(--muted);font-size:clamp(.95rem,2.3vmin,1.4rem);text-align:center}
 .badge{display:inline-flex;align-items:center;gap:.3em;border-radius:999px;padding:.1em .75em;font-weight:700;background:var(--soft);color:var(--soft-ink);font-size:.9em}
 .badge.e{background:#FFE9F1;color:#A3174F}
 .badge.t{background:#FFF0D6;color:#8A4A06}
-.word{width:100%;display:flex;justify-content:center;align-items:center;min-height:0;font-size:var(--fs);font-weight:700;line-height:1.18;letter-spacing:.01em}
-.chips{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;gap:.18em}
+.word{position:absolute;inset:0;display:flex;justify-content:center;align-items:center;pointer-events:none;font-size:var(--fs);font-weight:700;line-height:1.18;letter-spacing:.01em}
+.chips{position:relative;top:-.12em;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;gap:.18em}
 .chips.anim{animation:pop .32s cubic-bezier(.2,1.4,.4,1) both}
 .seg{display:inline-flex}
 .op{font-size:.55em;color:var(--muted);font-weight:700;padding:0 .12em}
@@ -123,7 +125,8 @@ button{cursor:pointer}
 /* Mod Mengajar */
 body.teach .topbar,body.teach .chips-row,body.teach .prog,body.teach .nt,body.teach .hint{display:none!important}
 body.teach .board{padding:6px}
-body.teach .cardbox{width:100%;border-radius:20px;border-color:transparent;box-shadow:none;background:var(--panel)}
+body.teach .cardbox{width:100%;border-radius:20px;border-color:transparent;box-shadow:none;background:var(--panel);}
+body.teach .bot{padding-bottom:76px}
 body.teach .cbar{position:absolute;left:0;right:0;bottom:0;padding:6px 10px max(8px,env(safe-area-inset-bottom,0px));opacity:.55;transition:opacity .2s;z-index:5}
 body.teach .cbar .tools{justify-content:center}
 body.teach .cbar:hover,body.teach .cbar:focus-within{opacity:1}
@@ -837,12 +840,10 @@ function renderCard(){
 }
 function fitWord(){
   const word = $('#word'), box = $('#cardbox'); if(!word || !box) return;
-  const cs = getComputedStyle(box);
-  const gap = parseFloat(cs.rowGap) || 0, pad = (parseFloat(cs.paddingTop)||0) + (parseFloat(cs.paddingBottom)||0);
-  let others = 0, n = 0;
-  Array.from(box.children).forEach(ch => { if(ch === word || ch.id === 'timer' || getComputedStyle(ch).display === 'none') return; others += ch.offsetHeight; n++; });
-  const availH = Math.max(60, box.clientHeight - pad - others - gap * n - 4);
-  const availW = box.clientWidth - 2 * (parseFloat(cs.paddingLeft) || 0) - 4;
+  const top = $('.top', box), bot = $('.bot', box);
+  const reserve = Math.max(top ? top.offsetHeight : 0, bot ? bot.offsetHeight : 0);
+  const availH = Math.max(60, box.clientHeight - 2 * reserve - 8);
+  const availW = box.clientWidth - 40;
   let fs = Math.min(availH / 1.22, availW * 0.62) * (SIZES[DB.settings.size] / .42);
   if(word.dataset.k === 'pair') fs *= .72;
   fs = Math.max(36, Math.min(fs, availH / 1.2));
@@ -937,11 +938,10 @@ function renderPlayer(){
     '<div class="board" id="board">' +
       '<div class="cardbox" id="cardbox">' +
         '<div class="timer" id="timer"></div>' +
-        '<div class="cap" id="cap"></div>' +
+        '<div class="top"><div class="cap" id="cap"></div></div>' +
         '<div class="word" id="word"></div>' +
-        '<div class="exs" id="exs"></div>' +
-        '<div class="dots" id="dots"></div>' +
-        '<div class="hint nt">Ketik skrin atau tekan Space untuk langkah seterusnya. Anak panah ← → untuk tukar kad.</div>' +
+        '<div class="bot"><div class="exs" id="exs"></div><div class="dots" id="dots"></div>' +
+        '<div class="hint nt">Ketik skrin atau tekan Space untuk langkah seterusnya. Anak panah ← → untuk tukar kad.</div></div>' +
       '</div>' +
     '</div>' +
     '<div class="prog"><div class="bar"><b id="pbar"></b></div><span class="num" id="pnum">0/0</span></div>' +

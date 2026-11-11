@@ -267,6 +267,9 @@ body.ptr-on .board,body.ptr-on .board *{cursor:none!important;touch-action:none}
 .jdt .p{display:inline}
 @media (max-width:760px){.jdt{font-size:clamp(12px,calc((100vw - 16px) / 17),40px)}.jdm .mh .prev{display:none}.jdm .mh h2{font-size:1rem}}
 
+/* Kunci admin */
+body.admlocked .adm .ic::after{content:"🔒";font-size:.62em;margin-left:.12em;vertical-align:super}
+
 </style>
 </head>
 <body>
@@ -470,7 +473,7 @@ let DB = (function(){
   return {
     settings: Object.assign({}, DEFAULT_SETTINGS, d.settings||{}),
     overrides: d.overrides || {},
-    off: d.off || {}, favs: d.favs || {}, dropped: d.dropped || {},
+    off: d.off || {}, favs: d.favs || {}, dropped: d.dropped || {}, admin: d.admin || null,
     last: d.last || null
   };
 })();
@@ -1087,8 +1090,8 @@ function renderPlayer(){
       '</div>' +
       btn('hide','🙈','Sembunyi','nolb '+(S.hideWord?'on':''),'id="hideBtn"') +
       btn('list','▦','Senarai','') +
-      (m.id !== 'fav' ? btn('edit','✎','Edit','nolb') : '') +
-      btn('settings','⚙','Tetapan','nolb') +
+      (m.id !== 'fav' ? btn('edit','✎','Edit','nolb adm') : '') +
+      btn('settings','⚙','Tetapan','nolb adm') +
       btn('teach','🎓','Mod Mengajar','pri') +
     '</div>' +
     '<div class="chips-row" id="chips">'+groupChips(m)+'</div>' +
@@ -1230,8 +1233,9 @@ function renderHome(){
     resume +
     '<div class="tiles">' + mods.filter(m => m.id !== 'saya').map(tile).join('') + tile(mods.find(m => m.id==='saya')) + favTile + '</div>' +
     '<div class="homebar">' +
-      btn('editHome','✎','Edit Bahan','') + btn('settings','⚙','Tetapan','') + btn('rekod','🎙','Rekod Bunyi','') + btn('fullscreen','⛶','Skrin Penuh','') + btn('help','?','Panduan','') + btn('backup','💾','Import / Eksport','') +
+      btn('editHome','✎','Edit Bahan','adm') + btn('settings','⚙','Tetapan','adm') + btn('rekod','🎙','Rekod Bunyi','adm') + btn('fullscreen','⛶','Skrin Penuh','') + btn('help','?','Panduan','') + btn('backup','💾','Import / Eksport','adm') +
     '</div>' +
+    (!Admin.hasPin() ? '<div><button class="btn sm" data-act="setpin">🔒 Tetapkan PIN admin</button></div>' : '') +
     '<div class="foot">Data disimpan pada peranti ini sahaja (localStorage). Gunakan Import / Eksport untuk sandaran. Aplikasi ini berfungsi tanpa internet selepas fail dimuatkan.</div>' +
   '</div>';
 }
@@ -1751,6 +1755,121 @@ function openJadual(){
 
 'use strict';
 /* =====================================================================
+   JOM BACA! - Kunci admin (PIN)
+   Mengunci: Tetapan, Edit Bahan, Rekod Bunyi, Import / Eksport.
+   PIN disimpan sebagai cincang SHA-256 bergaram dalam localStorage peranti ini.
+   Jika ADMIN_BAKED diisi, PIN yang sama digunakan pada semua peranti.
+   NOTA: ini kunci pada pelayar, bukan keselamatan pelayan. Ia menghalang
+   murid dan rakan sekerja daripada mengubah sesuatu secara tidak sengaja,
+   tetapi tidak dapat menghalang orang yang sengaja memadam data laman.
+   ===================================================================== */
+const ADMIN_BAKED = {h:'', s:''};   // contoh: {h:'<sha256 hex>', s:'<garam>'}; kosong = tidak digunakan
+const ADMIN_MINUTES = 10;           // tempoh admin kekal terbuka
+const Admin = {
+  until:0, fails:0, blockedUntil:0,
+  rec(){ return DB.admin || (ADMIN_BAKED.h ? ADMIN_BAKED : null); },
+  hasPin(){ return !!this.rec(); },
+  locked(){ return this.hasPin() && Date.now() >= this.until; },
+  unlocked(){ return !this.locked(); },
+  touch(){ this.until = Date.now() + ADMIN_MINUTES * 60 * 1000; admSync(); },
+  lock(){ this.until = 0; admSync(); }
+};
+function admSync(){ document.body.classList.toggle('admlocked', Admin.locked()); }
+
+/* ---------- Cincang ---------- */
+function cyrb(str, seed){
+  let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
+  for(let i = 0; i < str.length; i++){ const c = str.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0');
+}
+async function hashPin(pin, salt){
+  const s = salt + ':' + pin;
+  try {
+    if(window.crypto && crypto.subtle){
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+  } catch(e){}
+  return 'c' + cyrb(s, 1) + cyrb(s, 2) + cyrb(s, 3) + cyrb(s, 4);   // cadangan jika crypto.subtle tiada
+}
+function newSalt(){
+  const a = new Uint8Array(12);
+  try { crypto.getRandomValues(a); } catch(e){ for(let i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 256); }
+  return Array.from(a).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/* ---------- Dialog PIN ---------- */
+function requireAdmin(next){
+  if(Admin.unlocked()){ if(Admin.hasPin()) Admin.touch(); next(); return; }
+  askPin(next);
+}
+function askPin(next){
+  const ov = overlay('<div class="modal" role="dialog" aria-label="Kunci admin" style="width:min(100%,420px)"><div class="mh"><h2>🔒 Admin sahaja</h2></div>' +
+    '<div class="mb"><div>Tetapan, Edit Bahan, Rekod Bunyi dan Import / Eksport hanya boleh dibuka oleh admin. Masukkan PIN admin.</div>' +
+    '<input type="password" id="pinIn" inputmode="numeric" autocomplete="off" aria-label="PIN admin" placeholder="PIN admin">' +
+    '<div id="pinErr" class="prev" style="color:#B4531A;font-weight:700;min-height:1.3em" role="alert"></div></div>' +
+    '<div class="mf"><button class="btn" data-pin="no">Batal</button><button class="btn pri" data-pin="ok">Buka</button></div></div>', 'pinOvl');
+  const inp = $('#pinIn', ov), err = $('#pinErr', ov); inp.focus();
+  const submit = async () => {
+    const wait = Admin.blockedUntil - Date.now();
+    if(wait > 0){ err.textContent = 'Terlalu banyak cubaan. Cuba lagi dalam ' + Math.ceil(wait / 1000) + ' saat.'; return; }
+    const pin = inp.value; if(!pin){ err.textContent = 'Masukkan PIN.'; return; }
+    const r = Admin.rec(); const h = await hashPin(pin, r.s);
+    if(h === r.h){
+      Admin.fails = 0; Admin.touch(); ov.remove(); toast('Admin dibuka selama ' + ADMIN_MINUTES + ' minit.', 1800); next();
+    } else {
+      Admin.fails++; inp.value = ''; inp.focus();
+      if(Admin.fails >= 5){ Admin.fails = 0; Admin.blockedUntil = Date.now() + 30000; err.textContent = 'PIN salah 5 kali. Cuba lagi dalam 30 saat.'; }
+      else err.textContent = 'PIN salah (' + Admin.fails + ' / 5).';
+    }
+  };
+  ov.addEventListener('click', e => {
+    const b = e.target.closest('[data-pin]');
+    if(b){ if(b.dataset.pin === 'ok') submit(); else ov.remove(); }
+    else if(e.target === ov) ov.remove();
+  });
+  inp.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); submit(); } });
+}
+function openSetPin(){
+  const had = !!DB.admin;
+  const ov = overlay('<div class="modal" role="dialog" aria-label="Tetapkan PIN" style="width:min(100%,440px)"><div class="mh"><h2>🔒 ' + (had ? 'Tukar PIN admin' : 'Tetapkan PIN admin') + '</h2></div>' +
+    '<div class="mb"><div>PIN ini mengunci Tetapan, Edit Bahan, Rekod Bunyi dan Import / Eksport pada peranti ini. Gunakan sekurang-kurangnya 4 aksara dan ingat PIN ini.</div>' +
+    '<input type="password" id="pin1" inputmode="numeric" autocomplete="new-password" aria-label="PIN baharu" placeholder="PIN baharu">' +
+    '<input type="password" id="pin2" inputmode="numeric" autocomplete="new-password" aria-label="Sahkan PIN" placeholder="Sahkan PIN">' +
+    '<div id="pinErr2" class="prev" style="color:#B4531A;font-weight:700;min-height:1.3em" role="alert"></div></div>' +
+    '<div class="mf"><button class="btn" data-pin="no">Batal</button><button class="btn pri" data-pin="ok">Simpan</button></div></div>', 'pinSetOvl');
+  const a = $('#pin1', ov), b = $('#pin2', ov), err = $('#pinErr2', ov); a.focus();
+  const save = async () => {
+    if(a.value.length < 4){ err.textContent = 'PIN mesti sekurang-kurangnya 4 aksara.'; return; }
+    if(a.value !== b.value){ err.textContent = 'PIN tidak sepadan.'; return; }
+    const s = newSalt(); DB.admin = {h: await hashPin(a.value, s), s}; persist();
+    Admin.touch(); ov.remove(); toast('PIN admin disimpan. Tetapan kini dikunci apabila tamat tempoh.', 3000);
+    const so = $('#setOvl'); if(so){ so.remove(); openSettings(); }
+    if(S.view === 'home') renderHome();
+  };
+  ov.addEventListener('click', e => {
+    const x = e.target.closest('[data-pin]');
+    if(x){ if(x.dataset.pin === 'ok') save(); else ov.remove(); } else if(e.target === ov) ov.remove();
+  });
+  [a, b].forEach(i => i.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); save(); } }));
+}
+function removePin(){
+  if(!DB.admin){ toast('PIN ini tetap dalam aplikasi dan tidak boleh dibuang di sini.', 3500); return; }
+  confirmBox('Buang PIN admin? Semua orang boleh mengubah tetapan dan bahan pada peranti ini.', 'Buang PIN', () => {
+    DB.admin = null; persist(); admSync(); toast('PIN admin dibuang.');
+    const so = $('#setOvl'); if(so){ so.remove(); openSettings(); }
+    if(S.view === 'home') renderHome();
+  });
+}
+function lockNow(){
+  Admin.lock(); $$('.ovl').forEach(o => o.remove()); toast('Terkunci.', 1400);
+}
+admSync(); setInterval(admSync, 15000);
+
+'use strict';
+/* =====================================================================
    JOM BACA! - Edit bahan, tetapan, panduan, sandaran, acara papan kekunci
    ===================================================================== */
 function overlay(html, id){
@@ -1804,6 +1923,9 @@ function openSettings(){
     '<div class="sec">Bacaan automatik</div>' +
     '<div class="row"><div class="lbl">Sela masa tukar kad</div>'+opts('autoSec',[[3,'3 saat'],[5,'5 saat'],[8,'8 saat'],[10,'10 saat']])+'</div>' +
     '<div class="row"><div class="lbl">Ikut peringkat<small>Setiap sela masa membuka satu langkah (b → a → ba)</small></div>'+opts('autoStep',[['true','Ya'],['false','Tidak']])+'</div>' +
+    '<div class="sec">Admin</div>' +
+    '<div class="row"><div class="lbl">PIN admin<small>' + (Admin.hasPin() ? 'Tetapan, Edit Bahan, Rekod Bunyi dan Import / Eksport dikunci dengan PIN. Admin kekal terbuka ' + ADMIN_MINUTES + ' minit selepas PIN dimasukkan.' : 'Belum ada PIN. Sesiapa boleh mengubah tetapan dan bahan pada peranti ini.') + '</small></div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">' + (Admin.hasPin() ? '<button class="btn" data-act="setpin">Tukar PIN</button><button class="btn bad" data-act="rmpin">Buang PIN</button><button class="btn pri" data-act="lockadm">🔒 Kunci sekarang</button>' : '<button class="btn pri" data-act="setpin">🔒 Tetapkan PIN admin</button>') + '</div></div>' +
     '<div class="sec">Data</div>' +
     '<div class="row"><div class="lbl">Set semula semua tetapan dan bahan<small>Padam suntingan, kegemaran dan tetapan pada peranti ini</small></div><button class="btn bad" data-act="resetAll">Set semula semua</button></div>' +
     '</div></div>', 'setOvl');
@@ -1831,13 +1953,14 @@ function openHelp(){
     '<div class="sec">Mod</div><div><b>Belajar</b>: langkah demi langkah. <b>Uji Bacaan</b>: perkataan tanpa bantuan; guru tekan Tunjuk Bantuan / Tunjuk Jawapan dan menanda Betul atau Perlu Ulang. <b>Auto</b>: kad bertukar mengikut sela masa 3, 5, 8 atau 10 saat.</div>' +
     '<div class="sec">e pepet dan e taling</div><div>e pepet seperti dalam <i>emak</i>. e taling seperti dalam <i>ekor</i>. Dalam aplikasi ini e taling ditanda <b>é</b> sebagai penanda mengajar sahaja. Ejaan biasa tetap menggunakan e. Matikan penanda ini dalam Tetapan jika tidak mahu.</div>' +
     '<div class="sec">Edit bahan</div><div>Tekan Edit untuk menambah, mengubah, memadam, menyusun semula dan memilih kad. Taip suku kata dengan tanda - (contoh: ba-ju). Jika tiada tanda -, aplikasi mencadangkan pemecahan; sila semak. Gunakan <b>Set Saya</b> untuk set sendiri.</div>' +
+    '<div class="sec">Admin</div><div>Tetapan, Edit Bahan, Rekod Bunyi dan Import / Eksport boleh dikunci dengan PIN admin (Tetapan → Admin). Eksport menyertakan PIN supaya peranti lain yang mengimportnya turut terkunci. Kunci ini melindungi daripada perubahan tidak sengaja dan bukan keselamatan penuh.</div>' +
     '<div class="sec">Sandaran</div><div>Data disimpan dalam pelayar pada peranti ini. Gunakan Import / Eksport untuk memindahkan data ke peranti lain.</div>' +
     '</div></div>');
   ov.addEventListener('click', e => { if(e.target.closest('[data-close]') || e.target === ov) ov.remove(); });
 }
 
 /* ---------- Import / Eksport ---------- */
-function exportObj(){ return {app:'jom-baca', version:1, exported:new Date().toISOString(), settings:DB.settings, overrides:DB.overrides, off:DB.off, favs:DB.favs}; }
+function exportObj(){ return {app:'jom-baca', version:1, exported:new Date().toISOString(), settings:DB.settings, overrides:DB.overrides, off:DB.off, favs:DB.favs, admin:DB.admin || undefined}; }
 function openBackup(){
   let json = JSON.stringify(exportObj(), null, 1);
   const ov = overlay('<div class="modal" role="dialog" aria-label="Import dan eksport"><div class="mh"><h2>Import / Eksport JSON</h2><button class="btn sm" data-close>✕ Tutup</button></div><div class="mb">' +
@@ -1870,6 +1993,8 @@ function openBackup(){
         confirmBox('Gantikan semua data pada peranti ini dengan data import?', 'Import', async () => {
           DB.settings = Object.assign({}, DEFAULT_SETTINGS, o.settings||{});
           DB.overrides = o.overrides || {}; DB.off = o.off || {}; DB.favs = o.favs || {};
+          if(o.admin && o.admin.h && o.admin.s) DB.admin = {h:String(o.admin.h), s:String(o.admin.s)};
+          admSync();
           if(o.clips) await Clips.importAll(o.clips);
           persist(); ov.remove(); toast('Import berjaya.'); S.view === 'player' ? openModule(S.modId, S.gid) : renderHome();
         });
@@ -2057,16 +2182,19 @@ document.addEventListener('click', e => {
     case 'fav': { const it = item(); if(!it) break; if(DB.favs[it.c.id]){ delete DB.favs[it.c.id]; toast('Dibuang daripada Kegemaran.'); } else { DB.favs[it.c.id] = true; toast('Ditambah ke Kegemaran.'); } persist(); updateControls(); break; }
     case 'hide': S.hideWord = !S.hideWord; $('#hideBtn').classList.toggle('on', S.hideWord); refresh(); toast(S.hideWord ? 'Perkataan penuh disembunyikan pada permulaan kad.' : 'Perkataan penuh dipaparkan.'); break;
     case 'list': openList(); break;
-    case 'edit': openEditor(S.modId); break;
-    case 'editHome': openEditor(); break;
-    case 'settings': openSettings(); break;
-    case 'backup': openBackup(); break;
+    case 'edit': requireAdmin(() => openEditor(S.modId)); break;
+    case 'editHome': requireAdmin(() => openEditor()); break;
+    case 'settings': requireAdmin(openSettings); break;
+    case 'backup': requireAdmin(openBackup); break;
     case 'help': openHelp(); break;
     case 'teach': enterTeach(); break;
     case 'exitTeach': exitTeach(); break;
     case 'fullscreen': toggleFS(); break;
     case 'ptr': togglePtr(); break;
-    case 'rekod': openRekod(); break;
+    case 'rekod': requireAdmin(openRekod); break;
+    case 'setpin': requireAdmin(openSetPin); break;
+    case 'rmpin': requireAdmin(removePin); break;
+    case 'lockadm': lockNow(); break;
     case 'jadual': openJadual(); break;
     case 'right': mark(true); break;
     case 'again': mark(false); break;

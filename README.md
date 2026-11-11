@@ -18,6 +18,13 @@ atas = langkah sebelumnya; G gabung; S sebut; R ulang; P gambar; C penunjuk; F s
 Modul 5 ada kumpulan 'KVK – a (jadual)' hingga 'KVK – e taling (jadual)': 18 konsonan awal x 8 konsonan akhir (h k l m n r s t) = 144 suku kata bagi setiap vokal, seperti jadual dalam buku latihan.
 Tekan Jadual (atau J) untuk memaparkan jadual penuh. Ketik sel untuk ke kad itu, ketik pengepala lajur untuk ke kad pertama dalam lajur. Pilih baca ikut baris (bih, bik, bil...) atau ikut lajur (bih, cih, dih...).
 
+## Kunci admin
+Tetapan -> Admin -> Tetapkan PIN admin. Selepas itu Tetapan, Edit Bahan, Rekod Bunyi dan Import / Eksport meminta PIN (ditanda ikon kunci).
+Admin kekal terbuka 10 minit selepas PIN dimasukkan; tekan Kunci sekarang untuk mengunci serta-merta. Lima PIN salah menyekat percubaan selama 30 saat.
+PIN disimpan sebagai cincang SHA-256 bergaram pada peranti. Eksport JSON menyertakan cincang itu, jadi peranti yang mengimportnya turut terkunci dengan PIN yang sama.
+Untuk PIN tetap pada semua peranti, isi ADMIN_BAKED dalam fail (cincang sahaja, bukan PIN).
+Nota: ini kunci pada pelayar. Ia menghalang perubahan tidak sengaja oleh murid atau rakan sekerja, tetapi bukan keselamatan pelayan.
+
 ## Mod
 Penunjuk (bulatan, jari atau laser besar untuk menunjuk kepada murid semasa berkongsi skrin) · Belajar (langkah demi langkah) · Uji Bacaan (tanpa bantuan, Betul / Perlu Ulang) · Auto (3/5/8/10 saat) · Senarai kad · Edit Bahan.
 

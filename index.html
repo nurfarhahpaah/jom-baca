@@ -1174,7 +1174,7 @@ function openList(){
 /* ---------- Penunjuk (cursor besar untuk guru menunjuk kepada murid) ---------- */
 const PTR = document.createElement('div'); PTR.id = 'ptr'; PTR.hidden = true; PTR.setAttribute('aria-hidden','true');
 document.body.appendChild(PTR);
-const Ptr = {lx:null, ly:null, hideT:null};
+const Ptr = {lx:null, ly:null, hideT:null, lastTap:null};
 function ptrApply(){
   PTR.className = 'ptr ' + DB.settings.ptrStyle + ' s-' + DB.settings.ptrSize;
   PTR.textContent = DB.settings.ptrStyle === 'finger' ? '👆' : '';
@@ -1194,7 +1194,7 @@ function togglePtr(forceOff){
     const bd = $('#board');
     if(Ptr.lx !== null) ptrPlace(Ptr.lx, Ptr.ly);
     else if(bd){ const r = bd.getBoundingClientRect(); ptrPlace(r.left + r.width / 2, r.top + r.height / 2); }
-    toast('Penunjuk hidup. Klik atau sentuh untuk menanda. Guna Space atau butang untuk tukar langkah.', 3600);
+    toast('Penunjuk hidup. Ketik sekali untuk menanda, ketik dua kali untuk langkah seterusnya.', 3600);
   } else PTR.hidden = true;
 }
 function ptrRipple(x, y){
@@ -1207,7 +1207,14 @@ document.addEventListener('pointerdown', e => {
   Ptr.lx = e.clientX; Ptr.ly = e.clientY;
   if(!S.ptr) return;
   ptrFrom(e);
-  if(e.target.closest && e.target.closest('#board')) ptrRipple(e.clientX, e.clientY);
+  if(e.target.closest && e.target.closest('#board')){
+    ptrRipple(e.clientX, e.clientY);
+    // ketik dua kali (jari atau tetikus) = langkah seterusnya
+    const now = Date.now(), L = Ptr.lastTap;
+    if(L && now - L.t < 380 && Math.hypot(e.clientX - L.x, e.clientY - L.y) < 60){
+      Ptr.lastTap = null; ptrRipple(e.clientX, e.clientY); stepFwd();
+    } else Ptr.lastTap = {t:now, x:e.clientX, y:e.clientY};
+  }
 }, {passive:true});
 document.addEventListener('pointerup', e => {
   if(S.ptr && e.pointerType === 'touch'){ clearTimeout(Ptr.hideT); Ptr.hideT = setTimeout(() => { PTR.hidden = true; }, 1400); }
@@ -1291,7 +1298,7 @@ function openHelp(){
   const ov = overlay('<div class="modal" role="dialog" aria-label="Panduan"><div class="mh"><h2>Panduan ringkas</h2><button class="btn sm" data-close>✕ Tutup</button></div><div class="mb">' +
     '<div class="sec">Mula mengajar</div><div>Pilih modul, pilih kumpulan (contoh: KV – a), kemudian tekan <b>Mod Mengajar</b>. Skrin penuh dibuka dan hanya kad dipaparkan. Kongsi skrin melalui Google Meet atau Zoom.</div>' +
     '<div class="sec">Kekunci</div><div class="note info"><b>Space</b> atau ketik skrin: langkah seterusnya (b → a → ba). Jika langkah habis, kad seterusnya dibuka.<br><b>← →</b>: kad sebelumnya / seterusnya &nbsp; <b>↑</b>: langkah sebelumnya<br><b>G</b>: gabung &nbsp; <b>S</b>: sebut &nbsp; <b>R</b>: ulang &nbsp; <b>P</b>: tunjuk gambar &nbsp; <b>C</b>: penunjuk &nbsp; <b>F</b>: skrin penuh &nbsp; <b>Esc</b>: keluar</div>' +
-    '<div class="sec">Penunjuk</div><div>Tekan <b>Penunjuk</b> (atau C) untuk memaparkan bulatan, jari atau laser yang besar mengikut tetikus atau jari guru. Klik atau sentuh meninggalkan tanda berkelip. Semasa penunjuk hidup, ketik skrin tidak menukar langkah; gunakan Space atau butang.</div>' +
+    '<div class="sec">Penunjuk</div><div>Tekan <b>Penunjuk</b> (atau C) untuk memaparkan bulatan, jari atau laser yang besar mengikut tetikus atau jari guru. Klik atau sentuh sekali meninggalkan tanda berkelip. <b>Ketik dua kali</b> untuk ke langkah seterusnya. Space dan butang tetap berfungsi.</div>' +
     '<div class="sec">Mod</div><div><b>Belajar</b>: langkah demi langkah. <b>Uji Bacaan</b>: perkataan tanpa bantuan; guru tekan Tunjuk Bantuan / Tunjuk Jawapan dan menanda Betul atau Perlu Ulang. <b>Auto</b>: kad bertukar mengikut sela masa 3, 5, 8 atau 10 saat.</div>' +
     '<div class="sec">e pepet dan e taling</div><div>e pepet seperti dalam <i>emak</i>. e taling seperti dalam <i>ekor</i>. Dalam aplikasi ini e taling ditanda <b>é</b> sebagai penanda mengajar sahaja. Ejaan biasa tetap menggunakan e. Matikan penanda ini dalam Tetapan jika tidak mahu.</div>' +
     '<div class="sec">Edit bahan</div><div>Tekan Edit untuk menambah, mengubah, memadam, menyusun semula dan memilih kad. Taip suku kata dengan tanda - (contoh: ba-ju). Jika tiada tanda -, aplikasi mencadangkan pemecahan; sila semak. Gunakan <b>Set Saya</b> untuk set sendiri.</div>' +

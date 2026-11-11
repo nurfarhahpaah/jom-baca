@@ -737,6 +737,16 @@ function stepFwd(){
   else go(1);
 }
 function stepBack(){ if(S.step > 0){ S.step--; refresh(); } }
+/* Undur: langkah sebelumnya; jika di langkah pertama, kad sebelumnya */
+function stepBackFull(){
+  if(!S.deck.length) return;
+  if(S.step > 0){ S.step--; refresh(); return; }
+  if(S.idx > 0){
+    stopAutoTimer(); S.idx--; resetCardState();
+    S.step = S.mode === 'uji' ? 0 : lastStep();
+    refresh(); if(S.auto.running) startAutoTimer();
+  } else toast('Ini kad pertama.');
+}
 function showAnswer(){ if(!S.deck.length) return; S.step = lastStep(); refresh(); afterStage(); }
 function afterStage(){
   const it = item(); if(!it) return; const st = stagesNow().stages[S.step];
@@ -1194,7 +1204,7 @@ function togglePtr(forceOff){
     const bd = $('#board');
     if(Ptr.lx !== null) ptrPlace(Ptr.lx, Ptr.ly);
     else if(bd){ const r = bd.getBoundingClientRect(); ptrPlace(r.left + r.width / 2, r.top + r.height / 2); }
-    toast('Penunjuk hidup. Ketik sekali untuk menanda, ketik dua kali untuk langkah seterusnya.', 3600);
+    toast('Penunjuk hidup. Ketik sekali untuk menanda. Ketik dua kali di kanan skrin = seterusnya, di kiri = undur.', 4200);
   } else PTR.hidden = true;
 }
 function ptrRipple(x, y){
@@ -1209,10 +1219,13 @@ document.addEventListener('pointerdown', e => {
   ptrFrom(e);
   if(e.target.closest && e.target.closest('#board')){
     ptrRipple(e.clientX, e.clientY);
-    // ketik dua kali (jari atau tetikus) = langkah seterusnya
+    // ketik dua kali (jari atau tetikus): kanan = seterusnya, kiri = undur
     const now = Date.now(), L = Ptr.lastTap;
     if(L && now - L.t < 380 && Math.hypot(e.clientX - L.x, e.clientY - L.y) < 60){
-      Ptr.lastTap = null; ptrRipple(e.clientX, e.clientY); stepFwd();
+      Ptr.lastTap = null; ptrRipple(e.clientX, e.clientY);
+      // ketik dua kali di sebelah kanan = seterusnya, sebelah kiri = undur
+      const br = $('#board').getBoundingClientRect();
+      if(e.clientX < br.left + br.width / 2) stepBackFull(); else stepFwd();
     } else Ptr.lastTap = {t:now, x:e.clientX, y:e.clientY};
   }
 }, {passive:true});
@@ -1298,7 +1311,7 @@ function openHelp(){
   const ov = overlay('<div class="modal" role="dialog" aria-label="Panduan"><div class="mh"><h2>Panduan ringkas</h2><button class="btn sm" data-close>✕ Tutup</button></div><div class="mb">' +
     '<div class="sec">Mula mengajar</div><div>Pilih modul, pilih kumpulan (contoh: KV – a), kemudian tekan <b>Mod Mengajar</b>. Skrin penuh dibuka dan hanya kad dipaparkan. Kongsi skrin melalui Google Meet atau Zoom.</div>' +
     '<div class="sec">Kekunci</div><div class="note info"><b>Space</b> atau ketik skrin: langkah seterusnya (b → a → ba). Jika langkah habis, kad seterusnya dibuka.<br><b>← →</b>: kad sebelumnya / seterusnya &nbsp; <b>↑</b>: langkah sebelumnya<br><b>G</b>: gabung &nbsp; <b>S</b>: sebut &nbsp; <b>R</b>: ulang &nbsp; <b>P</b>: tunjuk gambar &nbsp; <b>C</b>: penunjuk &nbsp; <b>F</b>: skrin penuh &nbsp; <b>Esc</b>: keluar</div>' +
-    '<div class="sec">Penunjuk</div><div>Tekan <b>Penunjuk</b> (atau C) untuk memaparkan bulatan, jari atau laser yang besar mengikut tetikus atau jari guru. Klik atau sentuh sekali meninggalkan tanda berkelip. <b>Ketik dua kali</b> untuk ke langkah seterusnya. Space dan butang tetap berfungsi.</div>' +
+    '<div class="sec">Penunjuk</div><div>Tekan <b>Penunjuk</b> (atau C) untuk memaparkan bulatan, jari atau laser yang besar mengikut tetikus atau jari guru. Klik atau sentuh sekali meninggalkan tanda berkelip. <b>Ketik dua kali di sebelah kanan skrin</b> untuk ke langkah seterusnya, dan <b>di sebelah kiri</b> untuk undur satu langkah. Space, anak panah dan butang tetap berfungsi.</div>' +
     '<div class="sec">Mod</div><div><b>Belajar</b>: langkah demi langkah. <b>Uji Bacaan</b>: perkataan tanpa bantuan; guru tekan Tunjuk Bantuan / Tunjuk Jawapan dan menanda Betul atau Perlu Ulang. <b>Auto</b>: kad bertukar mengikut sela masa 3, 5, 8 atau 10 saat.</div>' +
     '<div class="sec">e pepet dan e taling</div><div>e pepet seperti dalam <i>emak</i>. e taling seperti dalam <i>ekor</i>. Dalam aplikasi ini e taling ditanda <b>é</b> sebagai penanda mengajar sahaja. Ejaan biasa tetap menggunakan e. Matikan penanda ini dalam Tetapan jika tidak mahu.</div>' +
     '<div class="sec">Edit bahan</div><div>Tekan Edit untuk menambah, mengubah, memadam, menyusun semula dan memilih kad. Taip suku kata dengan tanda - (contoh: ba-ju). Jika tiada tanda -, aplikasi mencadangkan pemecahan; sila semak. Gunakan <b>Set Saya</b> untuk set sendiri.</div>' +

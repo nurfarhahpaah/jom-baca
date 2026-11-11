@@ -25,6 +25,11 @@ PIN disimpan sebagai cincang SHA-256 bergaram pada peranti. Eksport JSON menyert
 Untuk PIN tetap pada semua peranti, isi ADMIN_BAKED dalam fail (cincang sahaja, bukan PIN).
 Nota: ini kunci pada pelayar. Ia menghalang perubahan tidak sengaja oleh murid atau rakan sekerja, tetapi bukan keselamatan pelayan.
 
+## Pangkalan data pusat (pilihan)
+Folder apps-script/ mengandungi Code.gs dan PANDUAN-PANGKALAN-DATA.md. Selepas persediaan (Google Sheet + Apps Script) dan mengisi CLOUD_URL dalam kod,
+PIN admin, tetapan kongsi dan bahan yang disunting disimpan di pusat: semua peranti membaca data yang sama dan hanya admin (PIN disahkan oleh pelayan) boleh menulis.
+Jika CLOUD_URL kosong, aplikasi bekerja seperti biasa (data pada peranti sahaja).
+
 ## Mod
 Penunjuk (bulatan, jari atau laser besar untuk menunjuk kepada murid semasa berkongsi skrin) · Belajar (langkah demi langkah) · Uji Bacaan (tanpa bantuan, Betul / Perlu Ulang) · Auto (3/5/8/10 saat) · Senarai kad · Edit Bahan.
 

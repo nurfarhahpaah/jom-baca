@@ -473,11 +473,11 @@ let DB = (function(){
   return {
     settings: Object.assign({}, DEFAULT_SETTINGS, d.settings||{}),
     overrides: d.overrides || {},
-    off: d.off || {}, favs: d.favs || {}, dropped: d.dropped || {}, admin: d.admin || null,
+    off: d.off || {}, favs: d.favs || {}, dropped: d.dropped || {}, admin: d.admin || null, cloudMeta: d.cloudMeta || null,
     last: d.last || null
   };
 })();
-function persist(){ DataSource.save(DB); }
+function persist(){ DataSource.save(DB); if(typeof Cloud !== 'undefined') Cloud.schedule(); }
 
 function getModules(){
   return DEFAULT_MODULES.map(m => {
@@ -1755,6 +1755,114 @@ function openJadual(){
 
 'use strict';
 /* =====================================================================
+   JOM BACA! - Sambungan pangkalan data pusat (Google Sheets + Apps Script)
+   Jika CLOUD_URL kosong, aplikasi bekerja seperti biasa (data pada peranti sahaja).
+   Jika diisi:
+     - semua peranti MEMBACA tetapan kongsi + bahan yang disunting daripada pangkalan data;
+     - hanya admin (PIN disahkan oleh pelayan) boleh MENULIS;
+     - PIN tidak lagi disimpan pada peranti.
+   ===================================================================== */
+const CLOUD_URL = '';   // alamat Web app Apps Script (berakhir /exec). Kosong = tidak digunakan.
+const SYNC_KEYS = ['caseMode','size','color','mark','letterSound','ptrStyle','ptrSize','audio'];   // tetapan yang dikongsi
+const Cloud = {
+  state:{loaded:false, ok:false, hasPin:false, version:0},
+  token:null, tokenUntil:0, timer:null, last:null, busy:false, warned:false,
+  enabled(){ return !!CLOUD_URL; },
+  authed(){ return !!this.token && Date.now() < this.tokenUntil; },
+  setToken(t, ttl){ this.token = t; this.tokenUntil = Date.now() + ((ttl || 1800) - 60) * 1000; },
+  clearToken(){ this.token = null; this.tokenUntil = 0; },
+
+  /* ---------- rangkaian ---------- */
+  async fetchJson(url, opt, ms){
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const t = setTimeout(() => { if(ctl) ctl.abort(); }, ms || 12000);
+    try {
+      const r = await fetch(url, Object.assign({signal: ctl && ctl.signal}, opt || {}));
+      if(!r.ok) throw new Error('http ' + r.status);
+      return await r.json();
+    } finally { clearTimeout(t); }
+  },
+  /* POST sebagai text/plain supaya tiada pra-penerbangan CORS (diperlukan oleh Apps Script) */
+  async call(payload){
+    try {
+      return await this.fetchJson(CLOUD_URL, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(payload)});
+    } catch(e){ return {ok:false, error:'network'}; }
+  },
+
+  /* ---------- baca ---------- */
+  pickSettings(){ const o = {}; SYNC_KEYS.forEach(k => { o[k] = DB.settings[k]; }); return o; },
+  payload(){ return {settings:this.pickSettings(), overrides:DB.overrides, dropped:DB.dropped}; },
+  apply(d){
+    SYNC_KEYS.forEach(k => { if(d.settings && d.settings[k] !== undefined) DB.settings[k] = d.settings[k]; });
+    DB.overrides = d.overrides || {}; DB.dropped = d.dropped || {};
+  },
+  async load(){
+    if(!this.enabled()) return;
+    let r;
+    try { r = await this.fetchJson(CLOUD_URL + (CLOUD_URL.indexOf('?') < 0 ? '?' : '&') + 'action=get&t=' + Date.now()); }
+    catch(e){ r = null; }
+    if(!r || !r.ok){
+      this.state.ok = false;
+      if(!this.warned){ this.warned = true; toast('Tidak dapat menyambung ke pangkalan data. Menggunakan data terakhir pada peranti ini.', 4500); }
+      return;
+    }
+    const pending = DB.cloudMeta && DB.cloudMeta.pending;
+    this.state.ok = true; this.state.loaded = true; this.state.hasPin = !!r.hasPin; this.state.version = r.version || 0;
+    let changed = false;
+    if(!pending && r.version > 0){
+      const before = JSON.stringify([this.pickSettings(), DB.overrides, DB.dropped]);
+      this.apply(r);
+      changed = before !== JSON.stringify([this.pickSettings(), DB.overrides, DB.dropped]);
+    }
+    DB.cloudMeta = {version:r.version || 0, hasPin:!!r.hasPin, pending:!!pending};
+    // pangkalan data kosong (versi 0): kekalkan data peranti ini dan muat naik apabila admin menyimpan
+    this.last = r.version > 0 ? JSON.stringify(this.payload()) : null;
+    DataSource.save(DB); admSync();
+    if(pending) toast('Ada perubahan pada peranti ini yang belum disimpan ke pangkalan data. Buka Tetapan sebagai admin untuk menyimpannya.', 6000);
+    if(S.view === 'home') renderHome(); else if(changed && !$('.ovl')) { /* kemas kini sebenar pada navigasi seterusnya */ }
+  },
+
+  /* ---------- tulis (hanya admin) ---------- */
+  schedule(){
+    if(!this.enabled() || !this.authed()) return;
+    clearTimeout(this.timer); this.timer = setTimeout(() => this.push(), 1500);
+  },
+  async push(){
+    if(!this.enabled() || this.busy) return;
+    const body = this.payload(), str = JSON.stringify(body);
+    if(str === this.last) return;
+    if(!this.authed()){ this.markPending(true); return; }
+    this.busy = true;
+    const r = await this.call(Object.assign({action:'save', token:this.token, baseVersion:this.state.version}, body));
+    this.busy = false;
+    if(r.ok){
+      this.state.version = r.version; this.last = str;
+      DB.cloudMeta = {version:r.version, hasPin:true, pending:false}; DataSource.save(DB);
+      toast('Disimpan ke pangkalan data.', 1400);
+    } else if(r.error === 'auth'){
+      this.clearToken(); Admin.lock(); this.markPending(true);
+      toast('Sesi admin tamat. Masukkan PIN admin semula untuk menyimpan.', 4500);
+    } else if(r.error === 'conflict'){
+      DB.cloudMeta = {version:r.version, hasPin:true, pending:false};
+      toast('Admin lain telah menyimpan perubahan. Data terkini dimuatkan.', 4500);
+      await this.load();
+      if(S.view === 'player') openModule(S.modId, S.gid);
+    } else {
+      this.markPending(true);
+      toast('Tidak dapat menyimpan ke pangkalan data. Perubahan kekal pada peranti ini. Cuba lagi apabila ada sambungan.', 5000);
+    }
+  },
+  markMeta(){ DB.cloudMeta = {version:this.state.version, hasPin:this.state.hasPin, pending:!!(DB.cloudMeta && DB.cloudMeta.pending)}; DataSource.save(DB); },
+  markPending(v){ DB.cloudMeta = Object.assign({}, DB.cloudMeta || {version:this.state.version, hasPin:this.state.hasPin}, {pending:v}); DataSource.save(DB); }
+};
+
+/* Data tersimpan terakhir digunakan serta-merta (juga semasa luar talian) */
+if(Cloud.enabled() && DB.cloudMeta){
+  Cloud.state.hasPin = !!DB.cloudMeta.hasPin; Cloud.state.version = DB.cloudMeta.version || 0; Cloud.state.loaded = true;
+}
+
+'use strict';
+/* =====================================================================
    JOM BACA! - Kunci admin (PIN)
    Mengunci: Tetapan, Edit Bahan, Import / Eksport. (Rekod Bunyi tidak dikunci.)
    PIN disimpan sebagai cincang SHA-256 bergaram dalam localStorage peranti ini.
@@ -1768,11 +1876,12 @@ const ADMIN_MINUTES = 10;           // tempoh admin kekal terbuka
 const Admin = {
   until:0, fails:0, blockedUntil:0,
   rec(){ return DB.admin || (ADMIN_BAKED.h ? ADMIN_BAKED : null); },
-  hasPin(){ return !!this.rec(); },
-  locked(){ return this.hasPin() && Date.now() >= this.until; },
+  // dengan pangkalan data: PIN disahkan oleh pelayan. Jika status PIN belum diketahui, anggap ada PIN (tutup)
+  hasPin(){ if(Cloud.enabled()) return Cloud.state.loaded ? Cloud.state.hasPin : true; return !!this.rec(); },
+  locked(){ return this.hasPin() && (Date.now() >= this.until || (Cloud.enabled() && !Cloud.authed())); },
   unlocked(){ return !this.locked(); },
   touch(){ this.until = Date.now() + ADMIN_MINUTES * 60 * 1000; admSync(); },
-  lock(){ this.until = 0; admSync(); }
+  lock(){ this.until = 0; if(Cloud.enabled()) Cloud.clearToken(); admSync(); }
 };
 function admSync(){ document.body.classList.toggle('admlocked', Admin.locked()); }
 
@@ -1816,6 +1925,7 @@ function askPin(next){
     const wait = Admin.blockedUntil - Date.now();
     if(wait > 0){ err.textContent = 'Terlalu banyak cubaan. Cuba lagi dalam ' + Math.ceil(wait / 1000) + ' saat.'; return; }
     const pin = inp.value; if(!pin){ err.textContent = 'Masukkan PIN.'; return; }
+    if(Cloud.enabled()){ await cloudVerify(pin, ov, inp, err, next); return; }
     const r = Admin.rec(); const h = await hashPin(pin, r.s);
     if(h === r.h){
       Admin.fails = 0; Admin.touch(); ov.remove(); toast('Admin dibuka selama ' + ADMIN_MINUTES + ' minit.', 1800); next();
@@ -1832,6 +1942,20 @@ function askPin(next){
   });
   inp.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); submit(); } });
 }
+/* Pengesahan PIN oleh pelayan (pangkalan data) */
+async function cloudVerify(pin, ov, inp, err, next){
+  const r = await Cloud.call({action:'verify', pin});
+  if(r.ok){
+    Cloud.setToken(r.token, r.ttl); Admin.touch(); ov.remove(); toast('Admin dibuka selama ' + ADMIN_MINUTES + ' minit.', 1800);
+    if(DB.cloudMeta && DB.cloudMeta.pending) Cloud.push();
+    next(); return;
+  }
+  inp.value = ''; inp.focus();
+  if(r.error === 'blocked') err.textContent = 'Terlalu banyak cubaan. Cuba lagi dalam ' + (r.retry || 60) + ' saat.';
+  else if(r.error === 'wrong_pin') err.textContent = 'PIN salah (' + (5 - (r.left || 0)) + ' / 5).';
+  else if(r.error === 'no_pin'){ Cloud.state.hasPin = false; Cloud.markMeta(); admSync(); ov.remove(); next(); }
+  else err.textContent = 'Tiada sambungan ke pangkalan data. Admin memerlukan sambungan internet.';
+}
 function openSetPin(){
   const had = !!DB.admin;
   const ov = overlay('<div class="modal" role="dialog" aria-label="Tetapkan PIN" style="width:min(100%,440px)"><div class="mh"><h2>🔒 ' + (had ? 'Tukar PIN admin' : 'Tetapkan PIN admin') + '</h2></div>' +
@@ -1844,8 +1968,21 @@ function openSetPin(){
   const save = async () => {
     if(a.value.length < 4){ err.textContent = 'PIN mesti sekurang-kurangnya 4 aksara.'; return; }
     if(a.value !== b.value){ err.textContent = 'PIN tidak sepadan.'; return; }
-    const s = newSalt(); DB.admin = {h: await hashPin(a.value, s), s}; persist();
-    Admin.touch(); ov.remove(); toast('PIN admin disimpan. Tetapan kini dikunci apabila tamat tempoh.', 3000);
+    if(Cloud.enabled()){
+      const r = await Cloud.call({action:'setpin', pin:a.value, token:Cloud.token});
+      if(!r.ok){
+        if(r.error === 'auth'){ Cloud.clearToken(); err.textContent = 'Sesi admin tamat. Tutup dan masukkan PIN lama semula.'; }
+        else if(r.error === 'pin_short') err.textContent = 'PIN mesti sekurang-kurangnya 4 aksara.';
+        else err.textContent = 'Tidak dapat menyimpan PIN. Semak sambungan internet.';
+        return;
+      }
+      Cloud.setToken(r.token, r.ttl); Cloud.state.hasPin = true; Cloud.state.loaded = true; Cloud.markMeta();
+      Cloud.last = null; Admin.touch(); ov.remove(); Cloud.schedule();
+      toast('PIN admin disimpan di pangkalan data. Tetapan dikongsi dengan semua peranti.', 3500);
+    } else {
+      const s = newSalt(); DB.admin = {h: await hashPin(a.value, s), s}; persist();
+      Admin.touch(); ov.remove(); toast('PIN admin disimpan. Tetapan kini dikunci apabila tamat tempoh.', 3000);
+    }
     const so = $('#setOvl'); if(so){ so.remove(); openSettings(); }
     if(S.view === 'home') renderHome();
   };
@@ -1856,8 +1993,17 @@ function openSetPin(){
   [a, b].forEach(i => i.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); save(); } }));
 }
 function removePin(){
-  if(!DB.admin){ toast('PIN ini tetap dalam aplikasi dan tidak boleh dibuang di sini.', 3500); return; }
+  if(!Cloud.enabled() && !DB.admin){ toast('PIN ini tetap dalam aplikasi dan tidak boleh dibuang di sini.', 3500); return; }
   confirmBox('Buang PIN admin? Semua orang boleh mengubah tetapan dan bahan pada peranti ini.', 'Buang PIN', () => {
+    if(Cloud.enabled()){
+      Cloud.call({action:'removepin', token:Cloud.token}).then(r => {
+        if(!r.ok){ toast('Tidak dapat membuang PIN. Masukkan PIN admin semula dan cuba lagi.', 4000); return; }
+        Cloud.clearToken(); Cloud.state.hasPin = false; Cloud.markMeta(); admSync(); toast('PIN admin dibuang.');
+        const so = $('#setOvl'); if(so){ so.remove(); openSettings(); }
+        if(S.view === 'home') renderHome();
+      });
+      return;
+    }
     DB.admin = null; persist(); admSync(); toast('PIN admin dibuang.');
     const so = $('#setOvl'); if(so){ so.remove(); openSettings(); }
     if(S.view === 'home') renderHome();
@@ -1924,7 +2070,7 @@ function openSettings(){
     '<div class="row"><div class="lbl">Sela masa tukar kad</div>'+opts('autoSec',[[3,'3 saat'],[5,'5 saat'],[8,'8 saat'],[10,'10 saat']])+'</div>' +
     '<div class="row"><div class="lbl">Ikut peringkat<small>Setiap sela masa membuka satu langkah (b → a → ba)</small></div>'+opts('autoStep',[['true','Ya'],['false','Tidak']])+'</div>' +
     '<div class="sec">Admin</div>' +
-    '<div class="row"><div class="lbl">PIN admin<small>' + (Admin.hasPin() ? 'Tetapan, Edit Bahan dan Import / Eksport dikunci dengan PIN. Admin kekal terbuka ' + ADMIN_MINUTES + ' minit selepas PIN dimasukkan.' : 'Belum ada PIN. Sesiapa boleh mengubah tetapan dan bahan pada peranti ini.') + '</small></div>' +
+    '<div class="row"><div class="lbl">PIN admin<small>' + (Admin.hasPin() ? 'Tetapan, Edit Bahan dan Import / Eksport dikunci dengan PIN. Admin kekal terbuka ' + ADMIN_MINUTES + ' minit selepas PIN dimasukkan.' + (Cloud.enabled() ? ' PIN dan perubahan admin disimpan dalam pangkalan data pusat dan dikongsi dengan semua peranti.' : '') : 'Belum ada PIN. Sesiapa boleh mengubah tetapan dan bahan pada peranti ini.') + '</small></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' + (Admin.hasPin() ? '<button class="btn" data-act="setpin">Tukar PIN</button><button class="btn bad" data-act="rmpin">Buang PIN</button><button class="btn pri" data-act="lockadm">🔒 Kunci sekarang</button>' : '<button class="btn pri" data-act="setpin">🔒 Tetapkan PIN admin</button>') + '</div></div>' +
     '<div class="sec">Data</div>' +
     '<div class="row"><div class="lbl">Set semula semua tetapan dan bahan<small>Padam suntingan, kegemaran dan tetapan pada peranti ini</small></div><button class="btn bad" data-act="resetAll">Set semula semua</button></div>' +
@@ -1960,7 +2106,7 @@ function openHelp(){
 }
 
 /* ---------- Import / Eksport ---------- */
-function exportObj(){ return {app:'jom-baca', version:1, exported:new Date().toISOString(), settings:DB.settings, overrides:DB.overrides, off:DB.off, favs:DB.favs, admin:DB.admin || undefined}; }
+function exportObj(){ return {app:'jom-baca', version:1, exported:new Date().toISOString(), settings:DB.settings, overrides:DB.overrides, off:DB.off, favs:DB.favs, admin:Cloud.enabled() ? undefined : (DB.admin || undefined)}; }
 function openBackup(){
   let json = JSON.stringify(exportObj(), null, 1);
   const ov = overlay('<div class="modal" role="dialog" aria-label="Import dan eksport"><div class="mh"><h2>Import / Eksport JSON</h2><button class="btn sm" data-close>✕ Tutup</button></div><div class="mb">' +
@@ -1993,7 +2139,7 @@ function openBackup(){
         confirmBox('Gantikan semua data pada peranti ini dengan data import?', 'Import', async () => {
           DB.settings = Object.assign({}, DEFAULT_SETTINGS, o.settings||{});
           DB.overrides = o.overrides || {}; DB.off = o.off || {}; DB.favs = o.favs || {};
-          if(o.admin && o.admin.h && o.admin.s) DB.admin = {h:String(o.admin.h), s:String(o.admin.s)};
+          if(!Cloud.enabled() && o.admin && o.admin.h && o.admin.s) DB.admin = {h:String(o.admin.h), s:String(o.admin.s)};
           admSync();
           if(o.clips) await Clips.importAll(o.clips);
           persist(); ov.remove(); toast('Import berjaya.'); S.view === 'player' ? openModule(S.modId, S.gid) : renderHome();
@@ -2237,6 +2383,7 @@ document.addEventListener('keyup', e => { if((e.key === ' ' || e.key === 'Spaceb
 
 /* ---------- Mula ---------- */
 renderHome();
+if(Cloud.enabled()) Cloud.load();
 
 </script>
 </body>

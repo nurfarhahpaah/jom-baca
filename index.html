@@ -239,6 +239,9 @@ body.ptr-on .board,body.ptr-on .board *{cursor:none!important;touch-action:none}
 .rk .btn.on{background:#E5484D;color:#fff}
 @keyframes rkpulse{50%{box-shadow:0 0 0 6px rgba(229,72,77,.22)}}
 
+.rkdet{border:2px dashed var(--line);border-radius:16px;padding:8px 12px}
+.rkdet>summary{font-weight:700;cursor:pointer;padding:6px 0}
+
 </style>
 </head>
 <body>
@@ -537,7 +540,7 @@ function pcs(sy, i, o){
     else if(o.by === 'x') c = 'x';
     else if(o.by === 'syl') c = 's' + (i % 2 + 1);
     else c = g.role;
-    return {t: o.norm ? norm(g.t) : g.t, c};
+    return {t: o.norm ? norm(g.t) : g.t, c, s: i};
   });
 }
 function kindOf(item){
@@ -639,7 +642,7 @@ function splitBuild(gs, by, hl){
     let c;
     if(g.sp === 'dg' && hl.dg) c = 'dg'; else if(g.sp === 'df' && hl.df) c = 'df';
     else c = by('') === 'x' ? 'x' : g.role;
-    return {t:g.t, c};
+    return {t:g.t, c, s:0};
   };
   const onset = [], vow = [], coda = []; let seen = false;
   gs.forEach(g => {
@@ -785,8 +788,9 @@ function speakStage(){
   // rakaman suara guru: digunakan jika semua bunyi dalam sebutan ini sudah direkod
   if(DB.settings.audio && Clips.enabled()){
     let items = null;
-    if(it.c.pair) items = [[it.c.pair[S.pairTarget]]];
-    else if(st.segs && !st.mask) items = st.join === 'none' ? [st.segs[0].map(p => p.t)] : st.segs.map(seg => seg.map(p => p.t));
+    const mp = p => ({t:p.t, s:p.s});
+    if(it.c.pair) items = [[{t:it.c.pair[S.pairTarget]}]];
+    else if(st.segs && !st.mask) items = st.join === 'none' ? [st.segs[0].map(mp)] : st.segs.map(seg => seg.map(mp));
     if(items){
       const slots = items.map(clipSlotsFor);
       if(slots.every(Boolean)){ Clips.play(slots).then(ok => { if(!ok) speakTts(it, st); }); return; }
@@ -1368,17 +1372,48 @@ const Clips = {
     return buf;
   },
   stop(){ this.srcs.forEach(s => { try { s.stop(); } catch(e){} }); this.srcs = []; },
-  /* items = [[slot, slot...], ...]: slot dalam satu item disambung rapat; antara item ada jeda pendek */
+  /* items = [[slot, slot...], ...]: slot dalam satu item disambung dengan pertindihan pendek dan pudar silang
+     supaya konsonan mengalir ke vokal (b + a = ba); antara item ada jeda pendek */
   async play(items){
     this.stop();
     const ctx = this.ac(); if(!ctx) return false;
     try { if(ctx.state === 'suspended') await ctx.resume(); } catch(e){}
     const lists = [];
-    for(const it of items){ const bs = []; for(const s of it){ const b = await this.buffer(s); if(!b) return false; bs.push(b); } lists.push(bs); }
+    for(const it of items){
+      const bs = [];
+      for(const raw of it){
+        const partial = raw.slice(-1) === '~', slot = partial ? raw.slice(0, -1) : raw;
+        const b = await this.buffer(slot); if(!b) return false;
+        bs.push({buf:b, slot, dur: partial ? Math.min(b.duration, 0.11) : b.duration, partial});
+      }
+      lists.push(bs);
+    }
+    const kind = s => s[0] === 'v' ? 'v' : (s[0] === 'g' || s[0] === 'h') ? 'c' : 's';
+    const overlap = (a, b) => {
+      const ka = kind(a.slot), kb = kind(b.slot); let o = 0;
+      if(ka === 'c' && kb === 'v') o = 0.06; else if(ka === 'v' && kb === 'c') o = 0.025; else if(ka === 'v' && kb === 'v') o = 0.012;
+      return Math.min(o, a.dur * 0.6, b.dur * 0.6);
+    };
     let t = ctx.currentTime + 0.05;
     lists.forEach((bs, i) => {
       if(i > 0) t += 0.35;
-      bs.forEach(b => { const src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination); src.start(t); this.srcs.push(src); t += b.duration; });
+      const ovIn = bs.map((c, j) => j > 0 ? overlap(bs[j - 1], c) : 0);
+      let start = t;
+      bs.forEach((c, j) => {
+        if(j > 0) start = start - ovIn[j] ;
+        const ovOut = j < bs.length - 1 ? ovIn[j + 1] : 0, end = start + c.dur;
+        const src = ctx.createBufferSource(); src.buffer = c.buf;
+        const g = ctx.createGain();
+        const fadeOut = c.partial ? Math.max(ovOut, 0.03) : ovOut;
+        g.gain.setValueAtTime(ovIn[j] > 0 ? 0 : 1, start);
+        if(ovIn[j] > 0) g.gain.linearRampToValueAtTime(1, start + ovIn[j]);
+        if(fadeOut > 0){ g.gain.setValueAtTime(1, Math.max(start + ovIn[j], end - fadeOut)); g.gain.linearRampToValueAtTime(0, end); }
+        src.connect(g); g.connect(ctx.destination);
+        if(c.partial) src.start(start, 0, c.dur); else src.start(start);
+        this.srcs.push(src);
+        start = end;
+      });
+      t = start;
     });
     return true;
   },
@@ -1395,20 +1430,32 @@ const Clips = {
 Clips.init();
 async function exportObjFull(){ const o = exportObj(); o.clips = await Clips.exportAll(); return o; }
 
-/* Padankan bahagian sebutan (grafem) kepada slot rakaman. null = ada yang belum direkod */
+/* Padankan bahagian sebutan kepada slot rakaman. pieces = [{t, s}] (s = nombor suku kata).
+   Keutamaan: rakaman suku kata penuh (s:ba) -> rakaman huruf (g:/h:/v:). null = ada yang belum direkod.
+   Hujung "~" = hanya bahagian awal klip (untuk membuang "ə" pada bunyi huruf yang digunakan sebagai bunyi gabung). */
 function clipSlotsFor(pieces){
   const multi = pieces.length > 1, out = [];
-  for(const t0 of pieces){
-    const t = String(t0).toLowerCase(); let cands;
+  let i = 0;
+  while(i < pieces.length){
+    const p0 = pieces[i], first = typeof p0 === 'string' ? {t:p0} : p0;
+    // 1) suku kata penuh
+    if(first.s !== undefined && multi){
+      let j = i, syl = '';
+      while(j < pieces.length && pieces[j].s === first.s){ syl += String(pieces[j].t).toLowerCase(); j++; }
+      if(j - i > 1 && Clips.has('s:' + syl)){ out.push('s:' + syl); i = j; continue; }
+    }
+    // 2) huruf demi huruf
+    const t = String(first.t).toLowerCase(); let cands;
     if(t === 'ai' || t === 'au' || t === 'oi'){
-      if(Clips.has('v:' + t)){ out.push('v:' + t); continue; }
-      if(Clips.has('v:' + t[0]) && Clips.has('v:' + t[1])){ out.push('v:' + t[0], 'v:' + t[1]); continue; }
+      if(Clips.has('v:' + t)){ out.push('v:' + t); i++; continue; }
+      if(Clips.has('v:' + t[0]) && Clips.has('v:' + t[1])){ out.push('v:' + t[0], 'v:' + t[1]); i++; continue; }
       return null;
     }
     else if(t.length === 1 && isV(t)) cands = ['v:' + t];
-    else if(CONS.indexOf(t) >= 0 || DIGRAPHS.indexOf(t) >= 0) cands = multi ? ['g:' + t, 'h:' + t] : ['h:' + t, 'g:' + t];
+    else if(CONS.indexOf(t) >= 0 || DIGRAPHS.indexOf(t) >= 0) cands = multi ? ['g:' + t, 'h:' + t + '~'] : ['h:' + t, 'g:' + t];
     else return null;
-    const s = cands.find(c => Clips.has(c)); if(!s) return null; out.push(s);
+    const s = cands.find(c => Clips.has(c.replace('~', ''))); if(!s) return null;
+    out.push(s); i++;
   }
   return out;
 }
@@ -1422,11 +1469,14 @@ async function toTrimmedWav(blob){
   for(let c = 0; c < chs; c++){ const d = buf.getChannelData(c); for(let i = 0; i < n; i++) mono[i] += d[i] / chs; }
   let peak = 0; for(let i = 0; i < n; i++){ const a = Math.abs(mono[i]); if(a > peak) peak = a; }
   if(peak < 0.012) throw new Error('senyap');
-  const thr = Math.max(0.012, peak * 0.08);
+  // ambang berdasarkan hingar latar (30 ms pertama) supaya letupan konsonan yang perlahan tidak terpangkas
+  let nf = 0; const nfN = Math.min(n, Math.round(0.03 * sr));
+  for(let i = 0; i < nfN; i++){ const a = Math.abs(mono[i]); if(a > nf) nf = a; }
+  const thr = Math.min(peak * 0.12, Math.max(0.005, nf * 2.5, peak * 0.02));
   let s = 0, e = n - 1;
   while(s < n && Math.abs(mono[s]) < thr) s++;
   while(e > s && Math.abs(mono[e]) < thr) e--;
-  s = Math.max(0, s - Math.round(0.012 * sr)); e = Math.min(n - 1, e + Math.round(0.035 * sr));
+  s = Math.max(0, s - Math.round(0.010 * sr)); e = Math.min(n - 1, e + Math.round(0.020 * sr));
   const len = e - s + 1; if(len < sr * 0.04) throw new Error('senyap');
   const gain = 0.9 / peak, fade = Math.round(0.006 * sr);
   const seg = new Float32Array(len);
@@ -1520,7 +1570,14 @@ function rekodSections(){
       items:letters.map(l => ['g:' + l, l, 'bunyi gabung'])},
     {id:'diftong', title:'Diftong', note:'Sebut dua vokal bersama dalam satu bunyi. Jika tiada, aplikasi menggabung bunyi a + i, a + u atau o + i.',
       items:[['v:ai','ai',''],['v:au','au',''],['v:oi','oi','']]}
-  ];
+  ].concat(rekodSylSections());
+}
+/* Suku kata KV penuh (pilihan): "ba" direkod sebagai satu bunyi, paling semula jadi */
+function rekodSylSections(){
+  const m = getModule('kv'); if(!m) return [];
+  return m.groups.map(g => ({id:'s-' + g.id, title:'Suku kata penuh: ' + g.title, syl:true,
+    note:'Pilihan. Sebut suku kata sebagai satu bunyi (contoh "ba"). Jika ada, ia digunakan menggantikan gabungan huruf demi huruf, termasuk dalam perkataan yang bermula dengan suku kata ini.',
+    items:g.cards.map(c => ['s:' + c.w, c.w, ''])}));
 }
 function rkTile(it){
   return '<div class="rk" data-slot="' + esc(it[0]) + '"><div class="rl">' + esc(it[1]) + '</div><div class="rs">' + esc(it[2] || ' ') + '</div>' +
@@ -1534,15 +1591,18 @@ function rkRefresh(){
     const rb = $('[data-rk="rec"]', t); rb.textContent = recording ? '⏹' : '🎙'; rb.classList.toggle('on', recording);
     $('[data-rk="play"]', t).disabled = !has; $('[data-rk="del"]', t).disabled = !has;
   });
-  const total = rekodSections().reduce((a, s) => a + s.items.length, 0);
-  const c = $('#rkCount', ov); if(c) c.textContent = Clips.keys.size + ' / ' + total + ' bunyi direkod';
+  const total = rekodSections().filter(s => !s.syl).reduce((a, s) => a + s.items.length, 0);
+  const ks = Array.from(Clips.keys), nSyl = ks.filter(k => k[0] === 's').length;
+  const c = $('#rkCount', ov); if(c) c.textContent = (ks.length - nSyl) + ' / ' + total + ' bunyi direkod' + (nSyl ? ' · ' + nSyl + ' suku kata' : '');
   const st = $('#rkState', ov); if(st) st.textContent = Rek.slot ? 'Merekod... sebut bunyi sekarang. Rakaman berhenti sendiri apabila anda diam.' : '';
 }
 function openRekod(){
   const secs = rekodSections();
-  const body = secs.map(s =>
+  const secHtml = s =>
     '<div class="sec rkhead">' + esc(s.title) + '<button class="btn sm" data-rk="chain" data-sec="' + s.id + '">Rekod berturutan</button></div>' +
-    '<div class="prev">' + esc(s.note) + '</div><div class="rkgrid">' + s.items.map(rkTile).join('') + '</div>').join('');
+    '<div class="prev">' + esc(s.note) + '</div><div class="rkgrid">' + s.items.map(rkTile).join('') + '</div>';
+  const body = secs.filter(s => !s.syl).map(secHtml).join('') +
+    '<details class="rkdet"><summary>Suku kata penuh (pilihan, untuk bunyi "ba" yang paling semula jadi)</summary>' + secs.filter(s => s.syl).map(secHtml).join('') + '</details>';
   const ov = overlay('<div class="modal wide" role="dialog" aria-label="Rekod bunyi"><div class="mh"><h2>Rekod Bunyi Saya</h2><span class="prev" id="rkCount"></span><button class="btn sm" data-rk="close">✕ Tutup</button></div>' +
     '<div class="mb"><div class="note info">Rekod di tempat senyap dan dekat dengan mikrofon. Tekan 🎙, sebut bunyi itu, dan rakaman berhenti sendiri apabila anda diam. Senyap di awal dan hujung dipangkas supaya bunyi boleh digabung dengan rapat. Bunyi yang belum direkod menggunakan suara peranti. Rakaman disimpan pada peranti ini sahaja.</div>' +
     '<div class="row"><div class="lbl">Gunakan rakaman suara saya<small>Jika dimatikan, suara peranti digunakan</small></div><div class="opts" role="group">' +

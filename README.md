@@ -25,6 +25,8 @@ Dalam Edit Bahan, taip `é` untuk e taling (cth. `mé-ja`).
 Tetapan -> Rekod Bunyi (atau butang Rekod Bunyi di menu). Rekod vokal (e pepet dan e taling berasingan), konsonan, digraf dan diftong.
 Setiap konsonan/digraf ada dua slot: bunyi huruf ("bə") dan bunyi gabung (b pendek, tanpa "ə"). Rakaman berhenti sendiri apabila guru diam;
 senyap di awal dan hujung dipangkas supaya bunyi boleh digabung rapat (b + a = ba, perkataan = suku kata berturut-turut).
+Klip disambung dengan pertindihan pendek dan pudar silang supaya konsonan mengalir ke vokal (b + a = ba).
+Pilihan: rekod suku kata KV penuh (ba, bi, bu, bé...) di bahagian 'Suku kata penuh'; jika ada, ia digunakan menggantikan gabungan huruf, termasuk dalam perkataan yang bermula dengan suku kata itu.
 Jika semua bunyi dalam satu sebutan ada rakaman, rakaman dimainkan; jika tidak, suara TTS peranti digunakan.
 Rakaman disimpan dalam IndexedDB pada peranti dan boleh disertakan dalam eksport JSON. Mikrofon memerlukan https atau fail tempatan;
 tidak berfungsi dalam pautan artifak Claude.

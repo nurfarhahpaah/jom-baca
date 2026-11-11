@@ -404,6 +404,7 @@ const DEFAULT_SETTINGS = {
   mark:true,          // papar é untuk e taling
   audio:true, voice:'', autoSpeak:false,
   autoSec:5, autoStep:false,
+  letterSound:'fonik', // fonik = bunyi huruf (bə) | nama = nama huruf (bi)
   ptrStyle:'ring',    // ring | finger | laser
   ptrSize:'md'        // sm | md | lg
 };
@@ -752,12 +753,25 @@ function afterStage(){
   const it = item(); if(!it) return; const st = stagesNow().stages[S.step];
   if(DB.settings.autoSpeak && (st.final || S.mode === 'uji')) speakStage();
 }
+/* Bunyi fonik Bahasa Melayu: konsonan dibunyikan dengan e pepet (b = "bə"), bukan nama huruf ("bi").
+   Ejaan 'e' dalam teks sebutan dibaca sebagai pepet oleh suara Melayu. Vokal dan suku kata dibaca seperti ejaan. */
+const FONIK = {
+  b:'be', c:'ce', d:'de', f:'fe', g:'ge', h:'he', j:'je', k:'ke', l:'le', m:'me', n:'ne', p:'pe', q:'ke', r:'re',
+  s:'se', t:'te', v:'ve', w:'we', x:'kese', y:'ye', z:'ze',
+  ng:'nge', ny:'nye', sy:'sye', kh:'khe', gh:'ghe'
+};
+function fonikText(t){
+  if(DB.settings.letterSound !== 'fonik') return t;
+  const k = String(t).toLowerCase();
+  return Object.prototype.hasOwnProperty.call(FONIK, k) ? FONIK[k] : t;
+}
 function speakStage(){
   const it = item(); if(!it) return;
   const sg = stagesNow().stages; let st = sg[S.step];
   let list = st.mask ? [] : stageSpeak(st);
   if(!list.length){ list = [norm(parseW(it.c.w).text)]; }
   if(it.c.pair){ list = [it.c.pair[S.pairTarget]]; }
+  list = list.map(fonikText);
   Speech.say(list, list.length > 1 ? .6 : .75);
 }
 
@@ -1270,7 +1284,7 @@ function openSettings(){
   let audioNote;
   if(!('speechSynthesis' in window)) audioNote = '<div class="note">Pelayar ini tidak menyokong audio bacaan.</div>';
   else if(!vs.length) audioNote = '<div class="note">Tiada suara Bahasa Melayu ditemui pada peranti ini. Audio tidak akan dimainkan dan tiada bahasa lain digunakan sebagai ganti. Pasang suara Melayu (ms-MY) dalam tetapan bahasa peranti, kemudian buka semula halaman ini.</div>';
-  else audioNote = '<div class="note info">Suara ditemui: ' + vs.map(v => esc(v.name)).join(', ') + '. Suara peranti tidak membezakan e pepet dan e taling.</div>';
+  else audioNote = '<div class="note info">Suara ditemui: ' + vs.map(v => esc(v.name)).join(', ') + '. Suara peranti tidak membezakan e pepet dan e taling, dan bunyi fonik bergantung pada suara yang dipasang.</div>';
   const ov = overlay('<div class="modal" role="dialog" aria-label="Tetapan"><div class="mh"><h2>Tetapan</h2><button class="btn sm" data-close>✕ Tutup</button></div><div class="mb">' +
     '<div class="row"><div class="lbl">Jenis huruf<small>Huruf kecil ialah paparan utama</small></div>'+opts('caseMode',[['lower','abc huruf kecil'],['upper','ABC HURUF BESAR']])+'</div>' +
     '<div class="row"><div class="lbl">Saiz tulisan</div>'+opts('size',[['sm','Kecil'],['md','Sederhana'],['lg','Besar'],['xl','Sangat besar']])+'</div>' +
@@ -1281,6 +1295,7 @@ function openSettings(){
     '<div class="row"><div class="lbl">Saiz penunjuk</div>'+opts('ptrSize',[['sm','Kecil'],['md','Sederhana'],['lg','Besar']])+'</div>' +
     '<div class="sec">Audio bacaan</div>' +
     '<div class="row"><div class="lbl">Audio</div>'+opts('audio',[['true','Hidup'],['false','Mati']])+'</div>' +
+    '<div class="row"><div class="lbl">Sebutan huruf<small>Fonik: b dibunyikan "bə". Nama huruf: b dibunyikan "bi". Suku kata dan perkataan tidak terjejas</small></div>'+opts('letterSound',[['fonik','Fonik (bə)'],['nama','Nama huruf']])+'</div>' +
     '<div class="row"><div class="lbl">Sebut automatik apabila jawapan dipaparkan</div>'+opts('autoSpeak',[['true','Ya'],['false','Tidak']])+'</div>' +
     (vs.length > 1 ? '<div class="row"><div class="lbl">Pilih suara</div><select id="voiceSel">'+vs.map(v => '<option value="'+esc(v.voiceURI)+'" '+(st.voice===v.voiceURI?'selected':'')+'>'+esc(v.name+' ('+v.lang+')')+'</option>').join('')+'</select></div>' : '') +
     audioNote +

@@ -21,6 +21,10 @@ Penunjuk (bulatan, jari atau laser besar untuk menunjuk kepada murid semasa berk
 e taling ditanda `é` (penanda mengajar sahaja; ejaan biasa guna `e`). Boleh dimatikan dalam Tetapan.
 Dalam Edit Bahan, taip `é` untuk e taling (cth. `mé-ja`).
 
+## Audio
+Butang Sebut membunyikan huruf secara fonik Bahasa Melayu (b = "bə", ng = "ngə"). Boleh ditukar kepada nama huruf dalam Tetapan.
+Hanya suara Melayu (ms-MY) pada peranti digunakan; bunyi bergantung pada suara yang dipasang.
+
 ## Data dan sandaran
 Semua tetapan dan suntingan disimpan dalam localStorage pada peranti. Import / Eksport JSON untuk sandaran.
 Format perkataan: `ba-ju|👕` (tanda `-` = sempadan suku kata, selepas `|` = gambar emoji).

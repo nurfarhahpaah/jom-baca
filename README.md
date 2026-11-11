@@ -1,6 +1,6 @@
 # JOM BACA! – Papan Bacaan Interaktif
 
-Satu fail sahaja: `index.html` (HTML + CSS + JavaScript, fon Andika tertanam).
+Satu fail sahaja: `index.html` (HTML + CSS + JavaScript, fon Andika tertanam; huruf t kecil dilukis sebagai palang silang lurus untuk tulisan bacaan).
 Buka terus dalam Chrome, Safari atau Edge. Tiada akaun, tiada internet diperlukan.
 Untuk kegunaan luar talian, simpan fail ini pada peranti (Save As) dan buka dari situ.
 

@@ -226,6 +226,19 @@ select{width:auto;max-width:100%}
 body.ptr-on .board,body.ptr-on .board *{cursor:none!important;touch-action:none}
 .btn.ptrbtn.on{background:#FF2D7A;color:#fff}
 
+/* Rekod bunyi */
+.rkhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
+.rkgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.rk{border:2px solid var(--line);border-radius:16px;padding:8px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;background:#fff}
+.rk .rl{font-size:2.2rem;font-weight:700;line-height:1.1}
+.rk .rs{font-size:.75rem;color:var(--muted);min-height:1.1em}
+.rk .ra{display:flex;gap:4px}
+.rk.has{border-color:#9EDDBC;background:#F2FBF6}
+.rk.recording{border-color:#E5484D;background:#FFEFEF;animation:rkpulse 1s infinite}
+.rk.queued{border-style:dashed;border-color:var(--accent)}
+.rk .btn.on{background:#E5484D;color:#fff}
+@keyframes rkpulse{50%{box-shadow:0 0 0 6px rgba(229,72,77,.22)}}
+
 </style>
 </head>
 <body>
@@ -404,6 +417,7 @@ const DEFAULT_SETTINGS = {
   mark:true,          // papar é untuk e taling
   audio:true, voice:'', autoSpeak:false,
   autoSec:5, autoStep:false,
+  useClips:true,       // guna rakaman suara guru jika ada
   letterSound:'fonik', // fonik = bunyi huruf (bə) | nama = nama huruf (bi)
   ptrStyle:'ring',    // ring | finger | laser
   ptrSize:'md'        // sm | md | lg
@@ -768,6 +782,19 @@ function fonikText(t){
 function speakStage(){
   const it = item(); if(!it) return;
   const sg = stagesNow().stages; let st = sg[S.step];
+  // rakaman suara guru: digunakan jika semua bunyi dalam sebutan ini sudah direkod
+  if(DB.settings.audio && Clips.enabled()){
+    let items = null;
+    if(it.c.pair) items = [[it.c.pair[S.pairTarget]]];
+    else if(st.segs && !st.mask) items = st.join === 'none' ? [st.segs[0].map(p => p.t)] : st.segs.map(seg => seg.map(p => p.t));
+    if(items){
+      const slots = items.map(clipSlotsFor);
+      if(slots.every(Boolean)){ Clips.play(slots).then(ok => { if(!ok) speakTts(it, st); }); return; }
+    }
+  }
+  speakTts(it, st);
+}
+function speakTts(it, st){
   let list = st.mask ? [] : stageSpeak(st);
   if(!list.length){ list = [norm(parseW(it.c.w).text)]; }
   if(it.c.pair){ list = [it.c.pair[S.pairTarget]]; }
@@ -1144,7 +1171,7 @@ function renderHome(){
     resume +
     '<div class="tiles">' + mods.filter(m => m.id !== 'saya').map(tile).join('') + tile(mods.find(m => m.id==='saya')) + favTile + '</div>' +
     '<div class="homebar">' +
-      btn('editHome','✎','Edit Bahan','') + btn('settings','⚙','Tetapan','') + btn('fullscreen','⛶','Skrin Penuh','') + btn('help','?','Panduan','') + btn('backup','💾','Import / Eksport','') +
+      btn('editHome','✎','Edit Bahan','') + btn('settings','⚙','Tetapan','') + btn('rekod','🎙','Rekod Bunyi','') + btn('fullscreen','⛶','Skrin Penuh','') + btn('help','?','Panduan','') + btn('backup','💾','Import / Eksport','') +
     '</div>' +
     '<div class="foot">Data disimpan pada peranti ini sahaja (localStorage). Gunakan Import / Eksport untuk sandaran. Aplikasi ini berfungsi tanpa internet selepas fail dimuatkan.</div>' +
   '</div>';
@@ -1251,6 +1278,300 @@ ptrApply();
 
 'use strict';
 /* =====================================================================
+   JOM BACA! - Rekod bunyi guru (vokal, konsonan, digraf, diftong)
+   - Rakaman disimpan dalam IndexedDB pada peranti (format WAV mono 22 kHz).
+   - Senyap di awal dan hujung dipangkas supaya klip boleh digabung tanpa jeda.
+   - Slot:  v:<vokal|diftong>   h:<konsonan|digraf> (bunyi huruf, cth. "bə")
+                                g:<konsonan|digraf> (bunyi gabung, cth. "b" pendek)
+   - Jika semua bunyi dalam satu sebutan ada rakaman, rakaman dimainkan
+     berturut-turut. Jika tidak, suara TTS peranti digunakan.
+   ===================================================================== */
+const CONS = 'bcdfghjklmnpqrstvwxyz'.split('');
+const DIGRAPHS = ['ng','ny','sy','kh','gh'];
+const REC_RATE = 22050;
+
+/* ---------- WAV / base64 ---------- */
+function encodeWav(f32, sr){
+  const n = f32.length, ab = new ArrayBuffer(44 + n * 2), v = new DataView(ab);
+  const ws = (o, s) => { for(let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  ws(0,'RIFF'); v.setUint32(4, 36 + n * 2, true); ws(8,'WAVE'); ws(12,'fmt '); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); ws(36,'data'); v.setUint32(40, n * 2, true);
+  for(let i = 0; i < n; i++){ const x = Math.max(-1, Math.min(1, f32[i])); v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true); }
+  return ab;
+}
+function abToB64(ab){
+  const b = new Uint8Array(ab); let s = ''; const CH = 0x8000;
+  for(let i = 0; i < b.length; i += CH) s += String.fromCharCode.apply(null, b.subarray(i, i + CH));
+  return btoa(s);
+}
+function b64ToAb(str){
+  const s = atob(str), b = new Uint8Array(s.length);
+  for(let i = 0; i < s.length; i++) b[i] = s.charCodeAt(i);
+  return b.buffer;
+}
+
+/* ---------- Gedung klip + main ---------- */
+const Clips = {
+  keys:new Set(), bufs:new Map(), mem:new Map(), dbp:null, ctx:null, srcs:[],
+  _db(){
+    if(this.dbp) return this.dbp;
+    this.dbp = new Promise(res => {
+      try {
+        const r = indexedDB.open('jombaca-audio', 1);
+        r.onupgradeneeded = () => r.result.createObjectStore('clips');
+        r.onsuccess = () => res(r.result); r.onerror = () => res(null); r.onblocked = () => res(null);
+      } catch(e){ res(null); }
+    });
+    return this.dbp;
+  },
+  async _tx(mode, fn){
+    const db = await this._db(); if(!db) return null;
+    return new Promise(res => {
+      try {
+        const tx = db.transaction('clips', mode); const rq = fn(tx.objectStore('clips'));
+        tx.oncomplete = () => res(rq && rq.result !== undefined ? rq.result : true);
+        tx.onerror = () => res(null); tx.onabort = () => res(null);
+      } catch(e){ res(null); }
+    });
+  },
+  async init(){
+    const keys = await this._tx('readonly', st => st.getAllKeys());
+    if(Array.isArray(keys)) keys.forEach(k => this.keys.add(k));
+  },
+  enabled(){ return DB.settings.useClips !== false && this.keys.size > 0; },
+  has(slot){ return this.keys.has(slot); },
+  ac(){
+    if(!this.ctx){ const C = window.AudioContext || window.webkitAudioContext; if(!C) return null; this.ctx = new C(); }
+    return this.ctx;
+  },
+  async put(slot, ab){
+    this.bufs.delete(slot);
+    const ok = await this._tx('readwrite', st => st.put(ab, slot));
+    if(!ok) this.mem.set(slot, ab);
+    this.keys.add(slot);
+  },
+  async getAb(slot){
+    if(this.mem.has(slot)) return this.mem.get(slot);
+    const r = await this._tx('readonly', st => st.get(slot));
+    return r && r !== true ? r : null;
+  },
+  async del(slot){
+    this.bufs.delete(slot); this.mem.delete(slot); this.keys.delete(slot);
+    await this._tx('readwrite', st => st.delete(slot));
+  },
+  async buffer(slot){
+    if(this.bufs.has(slot)) return this.bufs.get(slot);
+    const ab = await this.getAb(slot); const ctx = this.ac(); if(!ab || !ctx) return null;
+    const buf = await new Promise((res, rej) => { const p = ctx.decodeAudioData(ab.slice(0), res, rej); if(p && p.catch) p.catch(rej); }).catch(() => null);
+    if(buf) this.bufs.set(slot, buf);
+    return buf;
+  },
+  stop(){ this.srcs.forEach(s => { try { s.stop(); } catch(e){} }); this.srcs = []; },
+  /* items = [[slot, slot...], ...]: slot dalam satu item disambung rapat; antara item ada jeda pendek */
+  async play(items){
+    this.stop();
+    const ctx = this.ac(); if(!ctx) return false;
+    try { if(ctx.state === 'suspended') await ctx.resume(); } catch(e){}
+    const lists = [];
+    for(const it of items){ const bs = []; for(const s of it){ const b = await this.buffer(s); if(!b) return false; bs.push(b); } lists.push(bs); }
+    let t = ctx.currentTime + 0.05;
+    lists.forEach((bs, i) => {
+      if(i > 0) t += 0.35;
+      bs.forEach(b => { const src = ctx.createBufferSource(); src.buffer = b; src.connect(ctx.destination); src.start(t); this.srcs.push(src); t += b.duration; });
+    });
+    return true;
+  },
+  async exportAll(){
+    const out = {};
+    for(const k of Array.from(this.keys)){ const ab = await this.getAb(k); if(ab) out[k] = abToB64(ab); }
+    return out;
+  },
+  async importAll(obj){
+    for(const k of Array.from(this.keys)) await this.del(k);
+    for(const k of Object.keys(obj || {})){ try { await this.put(k, b64ToAb(obj[k])); } catch(e){} }
+  }
+};
+Clips.init();
+async function exportObjFull(){ const o = exportObj(); o.clips = await Clips.exportAll(); return o; }
+
+/* Padankan bahagian sebutan (grafem) kepada slot rakaman. null = ada yang belum direkod */
+function clipSlotsFor(pieces){
+  const multi = pieces.length > 1, out = [];
+  for(const t0 of pieces){
+    const t = String(t0).toLowerCase(); let cands;
+    if(t === 'ai' || t === 'au' || t === 'oi'){
+      if(Clips.has('v:' + t)){ out.push('v:' + t); continue; }
+      if(Clips.has('v:' + t[0]) && Clips.has('v:' + t[1])){ out.push('v:' + t[0], 'v:' + t[1]); continue; }
+      return null;
+    }
+    else if(t.length === 1 && isV(t)) cands = ['v:' + t];
+    else if(CONS.indexOf(t) >= 0 || DIGRAPHS.indexOf(t) >= 0) cands = multi ? ['g:' + t, 'h:' + t] : ['h:' + t, 'g:' + t];
+    else return null;
+    const s = cands.find(c => Clips.has(c)); if(!s) return null; out.push(s);
+  }
+  return out;
+}
+
+/* ---------- Rakaman ---------- */
+async function toTrimmedWav(blob){
+  const ctx = Clips.ac(); if(!ctx) throw new Error('audio');
+  const ab = await blob.arrayBuffer();
+  const buf = await new Promise((res, rej) => { const p = ctx.decodeAudioData(ab, res, rej); if(p && p.catch) p.catch(rej); });
+  const n = buf.length, sr = buf.sampleRate, chs = buf.numberOfChannels, mono = new Float32Array(n);
+  for(let c = 0; c < chs; c++){ const d = buf.getChannelData(c); for(let i = 0; i < n; i++) mono[i] += d[i] / chs; }
+  let peak = 0; for(let i = 0; i < n; i++){ const a = Math.abs(mono[i]); if(a > peak) peak = a; }
+  if(peak < 0.012) throw new Error('senyap');
+  const thr = Math.max(0.012, peak * 0.08);
+  let s = 0, e = n - 1;
+  while(s < n && Math.abs(mono[s]) < thr) s++;
+  while(e > s && Math.abs(mono[e]) < thr) e--;
+  s = Math.max(0, s - Math.round(0.012 * sr)); e = Math.min(n - 1, e + Math.round(0.035 * sr));
+  const len = e - s + 1; if(len < sr * 0.04) throw new Error('senyap');
+  const gain = 0.9 / peak, fade = Math.round(0.006 * sr);
+  const seg = new Float32Array(len);
+  for(let i = 0; i < len; i++){
+    let g = gain; if(i < fade) g *= i / fade; else if(len - 1 - i < fade) g *= (len - 1 - i) / fade;
+    seg[i] = mono[s + i] * g;
+  }
+  const ratio = sr / REC_RATE, outN = Math.max(1, Math.floor(len / ratio)), out = new Float32Array(outN);
+  for(let i = 0; i < outN; i++){ const p = i * ratio, i0 = Math.floor(p), i1 = Math.min(len - 1, i0 + 1), f = p - i0; out[i] = seg[i0] * (1 - f) + seg[i1] * f; }
+  return encodeWav(out, REC_RATE);
+}
+
+const Rek = {stream:null, rec:null, slot:null, chunks:[], vad:null, hard:null, chain:null, ov:null, src:null};
+async function rekStream(){
+  if(Rek.stream && Rek.stream.active) return Rek.stream;
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder){
+    toast('Pelayar ini tidak menyokong rakaman suara. Cuba Chrome, Edge atau Safari terkini.', 5000); return null;
+  }
+  try {
+    Rek.stream = await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:true}});
+    return Rek.stream;
+  } catch(e){
+    toast(e && e.name === 'NotFoundError'
+      ? 'Mikrofon tidak ditemui pada peranti ini.'
+      : 'Mikrofon tidak dibenarkan atau tidak tersedia di sini. Buka aplikasi melalui laman web biasa (https) dan benarkan mikrofon. Pautan artifak Claude menyekat mikrofon.', 7000);
+    return null;
+  }
+}
+function rekCleanup(){
+  clearInterval(Rek.vad); clearTimeout(Rek.hard); Rek.vad = null; Rek.hard = null;
+  if(Rek.src){ try { Rek.src.disconnect(); } catch(e){} Rek.src = null; }
+}
+async function rekStart(slot){
+  if(Rek.rec) return;
+  const stream = await rekStream(); if(!stream) return;
+  try { if('speechSynthesis' in window) speechSynthesis.cancel(); } catch(e){} Clips.stop();
+  const ctx = Clips.ac(); try { if(ctx && ctx.state === 'suspended') await ctx.resume(); } catch(e){}
+  const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find(m => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m));
+  const rec = new MediaRecorder(stream, mime ? {mimeType:mime} : undefined);
+  Rek.chunks = []; Rek.slot = slot; Rek.rec = rec;
+  rec.ondataavailable = e => { if(e.data && e.data.size) Rek.chunks.push(e.data); };
+  rec.onstop = async () => {
+    rekCleanup();
+    const done = Rek.slot, blob = new Blob(Rek.chunks, {type: rec.mimeType || mime || 'audio/webm'});
+    Rek.rec = null; Rek.slot = null;
+    let ok = false;
+    try { const wav = await toTrimmedWav(blob); await Clips.put(done, wav); ok = true; toast('Direkod.', 1100); }
+    catch(err){ toast(err && err.message === 'senyap' ? 'Bunyi tidak dikesan. Cuba lagi, dekatkan mikrofon.' : 'Rakaman gagal. Cuba lagi.', 3200); Rek.chain = null; }
+    rkRefresh();
+    if(ok && Rek.chain) setTimeout(rekChainNext, 750);
+  };
+  rec.start();
+  // berhenti sendiri apabila guru diam selepas bercakap
+  if(ctx){
+    try {
+      Rek.src = ctx.createMediaStreamSource(stream); const an = ctx.createAnalyser(); an.fftSize = 1024; Rek.src.connect(an);
+      const data = new Float32Array(an.fftSize); let spoke = false, quiet = null; const t0 = performance.now();
+      Rek.vad = setInterval(() => {
+        an.getFloatTimeDomainData(data); let sum = 0; for(let i = 0; i < data.length; i++) sum += data[i] * data[i];
+        const rms = Math.sqrt(sum / data.length), now = performance.now();
+        if(rms > 0.02){ spoke = true; quiet = null; }
+        else if(spoke){ if(quiet === null) quiet = now; else if(now - quiet > 650) rekStop(false); }
+        if(!spoke && now - t0 > 6000) rekStop(false);
+      }, 50);
+    } catch(e){}
+  }
+  Rek.hard = setTimeout(() => rekStop(false), 3500);
+  rkRefresh();
+}
+function rekStop(manual){
+  if(manual) Rek.chain = null;
+  if(Rek.rec && Rek.rec.state !== 'inactive') Rek.rec.stop();
+}
+function rekChainNext(){
+  if(!Rek.chain || !Rek.chain.length){ Rek.chain = null; toast('Selesai merekod bahagian ini.'); rkRefresh(); return; }
+  const slot = Rek.chain.shift();
+  const tile = Rek.ov && Rek.ov.querySelector('[data-slot="' + slot + '"]');
+  if(tile && tile.scrollIntoView) tile.scrollIntoView({block:'center', behavior:'smooth'});
+  rekStart(slot);
+}
+
+/* ---------- Antara muka Rekod Bunyi ---------- */
+function rekodSections(){
+  const letters = CONS.concat(DIGRAPHS);
+  return [
+    {id:'vokal', title:'Vokal', note:'Sebut bunyi vokal. e pepet seperti "emak", e taling seperti "ekor".',
+      items:[['v:a','a',''],['v:i','i',''],['v:u','u',''],['v:o','o',''],['v:e','e','pepet'],['v:é','é','taling']]},
+    {id:'huruf', title:'Konsonan dan digraf: bunyi huruf', note:'Sebutan huruf seperti diajar kepada murid, contohnya "bə". Digunakan apabila huruf dipaparkan bersendirian.',
+      items:letters.map(l => ['h:' + l, l, 'bunyi huruf'])},
+    {id:'gabung', title:'Konsonan dan digraf: bunyi gabung', note:'Bunyi pendek tanpa "ə", contohnya "b". Digunakan apabila menggabung b + a menjadi "ba". Jika anda rekod satu sahaja, ia digunakan untuk kedua-duanya.',
+      items:letters.map(l => ['g:' + l, l, 'bunyi gabung'])},
+    {id:'diftong', title:'Diftong', note:'Sebut dua vokal bersama dalam satu bunyi. Jika tiada, aplikasi menggabung bunyi a + i, a + u atau o + i.',
+      items:[['v:ai','ai',''],['v:au','au',''],['v:oi','oi','']]}
+  ];
+}
+function rkTile(it){
+  return '<div class="rk" data-slot="' + esc(it[0]) + '"><div class="rl">' + esc(it[1]) + '</div><div class="rs">' + esc(it[2] || ' ') + '</div>' +
+    '<div class="ra"><button class="btn sm iconbtn" data-rk="rec" aria-label="Rekod">🎙</button><button class="btn sm iconbtn" data-rk="play" aria-label="Dengar">▶</button><button class="btn sm iconbtn bad" data-rk="del" aria-label="Padam">🗑</button></div></div>';
+}
+function rkRefresh(){
+  const ov = Rek.ov; if(!ov || !ov.isConnected) return;
+  $$('.rk', ov).forEach(t => {
+    const slot = t.dataset.slot, has = Clips.has(slot), recording = Rek.slot === slot, queued = Rek.chain && Rek.chain.indexOf(slot) >= 0;
+    t.classList.toggle('has', has); t.classList.toggle('recording', recording); t.classList.toggle('queued', !!queued);
+    const rb = $('[data-rk="rec"]', t); rb.textContent = recording ? '⏹' : '🎙'; rb.classList.toggle('on', recording);
+    $('[data-rk="play"]', t).disabled = !has; $('[data-rk="del"]', t).disabled = !has;
+  });
+  const total = rekodSections().reduce((a, s) => a + s.items.length, 0);
+  const c = $('#rkCount', ov); if(c) c.textContent = Clips.keys.size + ' / ' + total + ' bunyi direkod';
+  const st = $('#rkState', ov); if(st) st.textContent = Rek.slot ? 'Merekod... sebut bunyi sekarang. Rakaman berhenti sendiri apabila anda diam.' : '';
+}
+function openRekod(){
+  const secs = rekodSections();
+  const body = secs.map(s =>
+    '<div class="sec rkhead">' + esc(s.title) + '<button class="btn sm" data-rk="chain" data-sec="' + s.id + '">Rekod berturutan</button></div>' +
+    '<div class="prev">' + esc(s.note) + '</div><div class="rkgrid">' + s.items.map(rkTile).join('') + '</div>').join('');
+  const ov = overlay('<div class="modal wide" role="dialog" aria-label="Rekod bunyi"><div class="mh"><h2>Rekod Bunyi Saya</h2><span class="prev" id="rkCount"></span><button class="btn sm" data-rk="close">✕ Tutup</button></div>' +
+    '<div class="mb"><div class="note info">Rekod di tempat senyap dan dekat dengan mikrofon. Tekan 🎙, sebut bunyi itu, dan rakaman berhenti sendiri apabila anda diam. Senyap di awal dan hujung dipangkas supaya bunyi boleh digabung dengan rapat. Bunyi yang belum direkod menggunakan suara peranti. Rakaman disimpan pada peranti ini sahaja.</div>' +
+    '<div class="row"><div class="lbl">Gunakan rakaman suara saya<small>Jika dimatikan, suara peranti digunakan</small></div><div class="opts" role="group">' +
+    '<button data-rk="use" data-v="true" class="' + (DB.settings.useClips !== false ? 'on' : '') + '">Ya</button><button data-rk="use" data-v="false" class="' + (DB.settings.useClips === false ? 'on' : '') + '">Tidak</button></div></div>' +
+    '<div class="prev" id="rkState" style="font-weight:700;color:var(--v)"></div>' + body + '</div></div>', 'rkOvl');
+  Rek.ov = ov; Rek.chain = null; rkRefresh();
+  const closeIt = () => { rekStop(true); rekCleanup(); if(Rek.stream){ Rek.stream.getTracks().forEach(t => t.stop()); Rek.stream = null; } Rek.chain = null; Clips.stop(); Rek.ov = null; ov.remove(); };
+  ov.addEventListener('click', e => {
+    const b = e.target.closest('[data-rk]');
+    if(!b){ if(e.target === ov) closeIt(); return; }
+    const a = b.dataset.rk, tile = b.closest('.rk'), slot = tile && tile.dataset.slot;
+    if(a === 'close'){ closeIt(); return; }
+    if(a === 'use'){ DB.settings.useClips = b.dataset.v === 'true'; persist(); $$('[data-rk="use"]', ov).forEach(x => x.classList.toggle('on', x === b)); return; }
+    if(a === 'rec'){ if(Rek.slot === slot) rekStop(true); else if(!Rek.rec){ Rek.chain = null; rekStart(slot); } return; }
+    if(a === 'play'){ Clips.play([[slot]]).then(ok => { if(!ok) toast('Tidak dapat memainkan rakaman ini.'); }); return; }
+    if(a === 'del'){ Clips.del(slot).then(rkRefresh); return; }
+    if(a === 'chain'){
+      if(Rek.rec) return;
+      const sec = secs.find(s => s.id === b.dataset.sec);
+      const todo = sec.items.map(i => i[0]).filter(s => !Clips.has(s));
+      if(!todo.length){ toast('Semua bunyi dalam bahagian ini sudah direkod. Padam dahulu jika mahu rekod semula.', 3600); return; }
+      Rek.chain = todo; rekChainNext(); return;
+    }
+  });
+  ov.querySelector('[data-rk="close"]').setAttribute('data-l', 'close');
+}
+
+'use strict';
+/* =====================================================================
    JOM BACA! - Edit bahan, tetapan, panduan, sandaran, acara papan kekunci
    ===================================================================== */
 function overlay(html, id){
@@ -1296,6 +1617,7 @@ function openSettings(){
     '<div class="sec">Audio bacaan</div>' +
     '<div class="row"><div class="lbl">Audio</div>'+opts('audio',[['true','Hidup'],['false','Mati']])+'</div>' +
     '<div class="row"><div class="lbl">Sebutan huruf<small>Fonik: b dibunyikan "bə". Nama huruf: b dibunyikan "bi". Suku kata dan perkataan tidak terjejas</small></div>'+opts('letterSound',[['fonik','Fonik (bə)'],['nama','Nama huruf']])+'</div>' +
+    '<div class="row"><div class="lbl">Rakaman suara saya<small>Rekod bunyi vokal dan konsonan dengan suara sendiri. Aplikasi menggabungkannya secara automatik</small></div><button class="btn" data-act="rekod">🎙 Rekod Bunyi</button></div>' +
     '<div class="row"><div class="lbl">Sebut automatik apabila jawapan dipaparkan</div>'+opts('autoSpeak',[['true','Ya'],['false','Tidak']])+'</div>' +
     (vs.length > 1 ? '<div class="row"><div class="lbl">Pilih suara</div><select id="voiceSel">'+vs.map(v => '<option value="'+esc(v.voiceURI)+'" '+(st.voice===v.voiceURI?'selected':'')+'>'+esc(v.name+' ('+v.lang+')')+'</option>').join('')+'</select></div>' : '') +
     audioNote +
@@ -1338,9 +1660,10 @@ function openHelp(){
 /* ---------- Import / Eksport ---------- */
 function exportObj(){ return {app:'jom-baca', version:1, exported:new Date().toISOString(), settings:DB.settings, overrides:DB.overrides, off:DB.off, favs:DB.favs}; }
 function openBackup(){
-  const json = JSON.stringify(exportObj(), null, 1);
+  let json = JSON.stringify(exportObj(), null, 1);
   const ov = overlay('<div class="modal" role="dialog" aria-label="Import dan eksport"><div class="mh"><h2>Import / Eksport JSON</h2><button class="btn sm" data-close>✕ Tutup</button></div><div class="mb">' +
     '<div class="sec">Eksport (sandaran)</div><textarea id="expTa" readonly aria-label="JSON eksport">'+esc(json)+'</textarea>' +
+    (Clips.keys.size ? '<label class="row" style="justify-content:flex-start;gap:8px"><input type="checkbox" id="expClips" style="width:22px;height:22px"> Sertakan rakaman suara saya (' + Clips.keys.size + ' klip, saiz lebih besar)</label>' : '') +
     '<div class="row" style="justify-content:flex-start"><button class="btn" data-bk="copy">📋 Salin</button><button class="btn" data-bk="dl">⬇ Muat turun .json</button></div>' +
     '<div class="sec">Import</div><div class="note">Import akan menggantikan tetapan, suntingan bahan dan kegemaran pada peranti ini.</div>' +
     '<textarea id="impTa" placeholder="Tampal JSON di sini atau pilih fail" aria-label="JSON import"></textarea>' +
@@ -1365,13 +1688,19 @@ function openBackup(){
         if(!txt){ toast('Tampal JSON atau pilih fail dahulu.'); return; }
         let o; try { o = JSON.parse(txt); } catch(x){ toast('JSON tidak sah: ' + x.message); return; }
         if(!o || o.app !== 'jom-baca'){ toast('Fail ini bukan sandaran Jom Baca.'); return; }
-        confirmBox('Gantikan semua data pada peranti ini dengan data import?', 'Import', () => {
+        confirmBox('Gantikan semua data pada peranti ini dengan data import?', 'Import', async () => {
           DB.settings = Object.assign({}, DEFAULT_SETTINGS, o.settings||{});
           DB.overrides = o.overrides || {}; DB.off = o.off || {}; DB.favs = o.favs || {};
+          if(o.clips) await Clips.importAll(o.clips);
           persist(); ov.remove(); toast('Import berjaya.'); S.view === 'player' ? openModule(S.modId, S.gid) : renderHome();
         });
       }
     } else if(e.target.closest('[data-close]') || e.target === ov){ ov.remove(); }
+  });
+  const expClips = $('#expClips', ov);
+  if(expClips) expClips.addEventListener('change', async () => {
+    const ta = $('#expTa', ov); ta.value = 'Menyediakan...';
+    json = JSON.stringify(expClips.checked ? await exportObjFull() : exportObj(), null, 1); ta.value = json;
   });
   $('#impFile', ov).addEventListener('change', ev => {
     const f = ev.target.files[0]; if(!f) return; const r = new FileReader();
@@ -1558,6 +1887,7 @@ document.addEventListener('click', e => {
     case 'exitTeach': exitTeach(); break;
     case 'fullscreen': toggleFS(); break;
     case 'ptr': togglePtr(); break;
+    case 'rekod': openRekod(); break;
     case 'right': mark(true); break;
     case 'again': mark(false); break;
     case 'autoToggle': autoToggle(); break;

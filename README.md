@@ -21,6 +21,14 @@ Penunjuk (bulatan, jari atau laser besar untuk menunjuk kepada murid semasa berk
 e taling ditanda `é` (penanda mengajar sahaja; ejaan biasa guna `e`). Boleh dimatikan dalam Tetapan.
 Dalam Edit Bahan, taip `é` untuk e taling (cth. `mé-ja`).
 
+## Rekod bunyi suara guru
+Tetapan -> Rekod Bunyi (atau butang Rekod Bunyi di menu). Rekod vokal (e pepet dan e taling berasingan), konsonan, digraf dan diftong.
+Setiap konsonan/digraf ada dua slot: bunyi huruf ("bə") dan bunyi gabung (b pendek, tanpa "ə"). Rakaman berhenti sendiri apabila guru diam;
+senyap di awal dan hujung dipangkas supaya bunyi boleh digabung rapat (b + a = ba, perkataan = suku kata berturut-turut).
+Jika semua bunyi dalam satu sebutan ada rakaman, rakaman dimainkan; jika tidak, suara TTS peranti digunakan.
+Rakaman disimpan dalam IndexedDB pada peranti dan boleh disertakan dalam eksport JSON. Mikrofon memerlukan https atau fail tempatan;
+tidak berfungsi dalam pautan artifak Claude.
+
 ## Audio
 Butang Sebut membunyikan huruf secara fonik Bahasa Melayu (b = "bə", ng = "ngə"). Boleh ditukar kepada nama huruf dalam Tetapan.
 Hanya suara Melayu (ms-MY) pada peranti digunakan; bunyi bergantung pada suara yang dipasang.

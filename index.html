@@ -82,7 +82,7 @@ button{cursor:pointer}
 .badge.e{background:#FFE9F1;color:#A3174F}
 .badge.t{background:#FFF0D6;color:#8A4A06}
 .word{position:absolute;inset:0;display:flex;justify-content:center;align-items:center;pointer-events:none;font-size:var(--fs);font-weight:700;line-height:1.18;letter-spacing:.01em}
-.chips{position:relative;top:-.12em;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;gap:.18em}
+.chips{position:relative;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap;gap:.18em}
 .chips.anim{animation:pop .32s cubic-bezier(.2,1.4,.4,1) both}
 .seg{display:inline-flex}
 .op{font-size:.55em;color:var(--muted);font-weight:700;padding:0 .12em}
@@ -840,9 +840,18 @@ function renderCard(){
 }
 function fitWord(){
   const word = $('#word'), box = $('#cardbox'); if(!word || !box) return;
-  const top = $('.top', box), bot = $('.bot', box);
-  const reserve = Math.max(top ? top.offsetHeight : 0, bot ? bot.offsetHeight : 0);
-  const availH = Math.max(60, box.clientHeight - 2 * reserve - 8);
+  const top = $('.top', box), bot = $('.bot', box), exs = $('#exs');
+  const th = top ? top.offsetHeight : 0, bh = bot ? bot.offsetHeight : 0;
+  let availH;
+  if(exs && exs.children.length){
+    // ada contoh / gambar: huruf di tengah ruang yang tinggal
+    word.style.top = th + 'px'; word.style.bottom = bh + 'px';
+    availH = Math.max(60, box.clientHeight - th - bh - 8);
+  } else {
+    // huruf bersendirian: tepat di tengah kad
+    word.style.top = '0'; word.style.bottom = '0';
+    availH = Math.max(60, box.clientHeight - 2 * Math.max(th, bh) - 8);
+  }
   const availW = box.clientWidth - 40;
   let fs = Math.min(availH / 1.22, availW * 0.62) * (SIZES[DB.settings.size] / .42);
   if(word.dataset.k === 'pair') fs *= .72;
@@ -855,7 +864,30 @@ function fitWord(){
       if(w > availW){ fs = fs * availW / w * .98; word.style.fontSize = fs + 'px'; } else break;
     }
   }
+  centerInk();
 }
+/* Letakkan dakwat huruf (bukan kotak garisan) tepat di tengah kawasan perkataan */
+function centerInk(){
+  const word = $('#word'); const ch = word && word.firstElementChild; if(!ch) return;
+  ch.style.top = '0px';
+  const items = ch.querySelectorAll('.p, .pl'); if(!items.length) return;
+  const letters = Array.from(items).map(e => e.firstChild && e.firstChild.nodeType === 3 ? e.firstChild.textContent : e.textContent).join('');
+  const fs = parseFloat(word.style.fontSize); if(!fs || !letters) return;
+  const cv = centerInk.cv || (centerInk.cv = document.createElement('canvas').getContext('2d'));
+  const cs = getComputedStyle(items[0]);
+  cv.font = cs.fontWeight + ' ' + fs + 'px ' + cs.fontFamily;
+  const m = cv.measureText(letters);
+  if(!m.actualBoundingBoxAscent && !m.actualBoundingBoxDescent) return;
+  const probe = document.createElement('span'); probe.style.cssText = 'display:inline-block;width:0;height:0';
+  items[0].appendChild(probe);
+  // kedudukan garis dasar mengikut tata letak (tidak terjejas oleh animasi / transform)
+  let base = 0, el = probe;
+  while(el && el !== word){ base += el.offsetTop; el = el.offsetParent; }
+  probe.remove();
+  const inkCenter = base + (m.actualBoundingBoxDescent - m.actualBoundingBoxAscent) / 2;
+  ch.style.top = (word.clientHeight / 2 - inkCenter) + 'px';
+}
+if(document.fonts && document.fonts.ready) document.fonts.ready.then(() => { try { fitWord(); } catch(e){} });
 function updateProgress(){
   const n = S.deck.length;
   const num = $('#pnum'), bar = $('#pbar'), tc = $('#tcount');

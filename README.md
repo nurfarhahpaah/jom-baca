@@ -12,7 +12,11 @@ atas = langkah sebelumnya; G gabung; S sebut; R ulang; P gambar; C penunjuk; F s
 
 ## Modul
 1 Vokal · 2 Konsonan (+ b/d, p/q, m/n) · 3 KV (a, i, o, u, e pepet, e taling) · 4 KVKV (pola sama + campuran)
-5 KVK (10 akhiran) · 6 Diftong · 7 Digraf (ng, ny, sy, kh, gh) · Set Saya · Kegemaran
+5 KVK (10 akhiran + jadual KVK 18 x 8 untuk a, i, o, u, e pepet, e taling) · 6 Diftong · 7 Digraf (ng, ny, sy, kh, gh) · Set Saya · Kegemaran
+
+## Jadual KVK
+Modul 5 ada kumpulan 'KVK – a (jadual)' hingga 'KVK – e taling (jadual)': 18 konsonan awal x 8 konsonan akhir (h k l m n r s t) = 144 suku kata bagi setiap vokal, seperti jadual dalam buku latihan.
+Tekan Jadual (atau J) untuk memaparkan jadual penuh. Ketik sel untuk ke kad itu, ketik pengepala lajur untuk ke kad pertama dalam lajur. Pilih baca ikut baris (bih, bik, bil...) atau ikut lajur (bih, cih, dih...).
 
 ## Mod
 Penunjuk (bulatan, jari atau laser besar untuk menunjuk kepada murid semasa berkongsi skrin) · Belajar (langkah demi langkah) · Uji Bacaan (tanpa bantuan, Betul / Perlu Ulang) · Auto (3/5/8/10 saat) · Senarai kad · Edit Bahan.

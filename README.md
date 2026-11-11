@@ -19,7 +19,7 @@ Modul 5 ada kumpulan 'KVK – a (jadual)' hingga 'KVK – e taling (jadual)': 18
 Tekan Jadual (atau J) untuk memaparkan jadual penuh. Ketik sel untuk ke kad itu, ketik pengepala lajur untuk ke kad pertama dalam lajur. Pilih baca ikut baris (bih, bik, bil...) atau ikut lajur (bih, cih, dih...).
 
 ## Kunci admin
-Tetapan -> Admin -> Tetapkan PIN admin. Selepas itu Tetapan, Edit Bahan, Rekod Bunyi dan Import / Eksport meminta PIN (ditanda ikon kunci).
+Tetapan -> Admin -> Tetapkan PIN admin. Selepas itu Tetapan, Edit Bahan dan Import / Eksport meminta PIN (ditanda ikon kunci). Rekod Bunyi tidak dikunci.
 Admin kekal terbuka 10 minit selepas PIN dimasukkan; tekan Kunci sekarang untuk mengunci serta-merta. Lima PIN salah menyekat percubaan selama 30 saat.
 PIN disimpan sebagai cincang SHA-256 bergaram pada peranti. Eksport JSON menyertakan cincang itu, jadi peranti yang mengimportnya turut terkunci dengan PIN yang sama.
 Untuk PIN tetap pada semua peranti, isi ADMIN_BAKED dalam fail (cincang sahaja, bukan PIN).

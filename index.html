@@ -1233,7 +1233,7 @@ function renderHome(){
     resume +
     '<div class="tiles">' + mods.filter(m => m.id !== 'saya').map(tile).join('') + tile(mods.find(m => m.id==='saya')) + favTile + '</div>' +
     '<div class="homebar">' +
-      btn('editHome','✎','Edit Bahan','adm') + btn('settings','⚙','Tetapan','adm') + btn('rekod','🎙','Rekod Bunyi','adm') + btn('fullscreen','⛶','Skrin Penuh','') + btn('help','?','Panduan','') + btn('backup','💾','Import / Eksport','adm') +
+      btn('editHome','✎','Edit Bahan','adm') + btn('settings','⚙','Tetapan','adm') + btn('rekod','🎙','Rekod Bunyi','') + btn('fullscreen','⛶','Skrin Penuh','') + btn('help','?','Panduan','') + btn('backup','💾','Import / Eksport','adm') +
     '</div>' +
     (!Admin.hasPin() ? '<div><button class="btn sm" data-act="setpin">🔒 Tetapkan PIN admin</button></div>' : '') +
     '<div class="foot">Data disimpan pada peranti ini sahaja (localStorage). Gunakan Import / Eksport untuk sandaran. Aplikasi ini berfungsi tanpa internet selepas fail dimuatkan.</div>' +
@@ -1756,7 +1756,7 @@ function openJadual(){
 'use strict';
 /* =====================================================================
    JOM BACA! - Kunci admin (PIN)
-   Mengunci: Tetapan, Edit Bahan, Rekod Bunyi, Import / Eksport.
+   Mengunci: Tetapan, Edit Bahan, Import / Eksport. (Rekod Bunyi tidak dikunci.)
    PIN disimpan sebagai cincang SHA-256 bergaram dalam localStorage peranti ini.
    Jika ADMIN_BAKED diisi, PIN yang sama digunakan pada semua peranti.
    NOTA: ini kunci pada pelayar, bukan keselamatan pelayan. Ia menghalang
@@ -1807,7 +1807,7 @@ function requireAdmin(next){
 }
 function askPin(next){
   const ov = overlay('<div class="modal" role="dialog" aria-label="Kunci admin" style="width:min(100%,420px)"><div class="mh"><h2>🔒 Admin sahaja</h2></div>' +
-    '<div class="mb"><div>Tetapan, Edit Bahan, Rekod Bunyi dan Import / Eksport hanya boleh dibuka oleh admin. Masukkan PIN admin.</div>' +
+    '<div class="mb"><div>Tetapan, Edit Bahan dan Import / Eksport hanya boleh dibuka oleh admin. Masukkan PIN admin.</div>' +
     '<input type="password" id="pinIn" inputmode="numeric" autocomplete="off" aria-label="PIN admin" placeholder="PIN admin">' +
     '<div id="pinErr" class="prev" style="color:#B4531A;font-weight:700;min-height:1.3em" role="alert"></div></div>' +
     '<div class="mf"><button class="btn" data-pin="no">Batal</button><button class="btn pri" data-pin="ok">Buka</button></div></div>', 'pinOvl');
@@ -1835,7 +1835,7 @@ function askPin(next){
 function openSetPin(){
   const had = !!DB.admin;
   const ov = overlay('<div class="modal" role="dialog" aria-label="Tetapkan PIN" style="width:min(100%,440px)"><div class="mh"><h2>🔒 ' + (had ? 'Tukar PIN admin' : 'Tetapkan PIN admin') + '</h2></div>' +
-    '<div class="mb"><div>PIN ini mengunci Tetapan, Edit Bahan, Rekod Bunyi dan Import / Eksport pada peranti ini. Gunakan sekurang-kurangnya 4 aksara dan ingat PIN ini.</div>' +
+    '<div class="mb"><div>PIN ini mengunci Tetapan, Edit Bahan dan Import / Eksport pada peranti ini. Gunakan sekurang-kurangnya 4 aksara dan ingat PIN ini.</div>' +
     '<input type="password" id="pin1" inputmode="numeric" autocomplete="new-password" aria-label="PIN baharu" placeholder="PIN baharu">' +
     '<input type="password" id="pin2" inputmode="numeric" autocomplete="new-password" aria-label="Sahkan PIN" placeholder="Sahkan PIN">' +
     '<div id="pinErr2" class="prev" style="color:#B4531A;font-weight:700;min-height:1.3em" role="alert"></div></div>' +
@@ -1924,7 +1924,7 @@ function openSettings(){
     '<div class="row"><div class="lbl">Sela masa tukar kad</div>'+opts('autoSec',[[3,'3 saat'],[5,'5 saat'],[8,'8 saat'],[10,'10 saat']])+'</div>' +
     '<div class="row"><div class="lbl">Ikut peringkat<small>Setiap sela masa membuka satu langkah (b → a → ba)</small></div>'+opts('autoStep',[['true','Ya'],['false','Tidak']])+'</div>' +
     '<div class="sec">Admin</div>' +
-    '<div class="row"><div class="lbl">PIN admin<small>' + (Admin.hasPin() ? 'Tetapan, Edit Bahan, Rekod Bunyi dan Import / Eksport dikunci dengan PIN. Admin kekal terbuka ' + ADMIN_MINUTES + ' minit selepas PIN dimasukkan.' : 'Belum ada PIN. Sesiapa boleh mengubah tetapan dan bahan pada peranti ini.') + '</small></div>' +
+    '<div class="row"><div class="lbl">PIN admin<small>' + (Admin.hasPin() ? 'Tetapan, Edit Bahan dan Import / Eksport dikunci dengan PIN. Admin kekal terbuka ' + ADMIN_MINUTES + ' minit selepas PIN dimasukkan.' : 'Belum ada PIN. Sesiapa boleh mengubah tetapan dan bahan pada peranti ini.') + '</small></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap">' + (Admin.hasPin() ? '<button class="btn" data-act="setpin">Tukar PIN</button><button class="btn bad" data-act="rmpin">Buang PIN</button><button class="btn pri" data-act="lockadm">🔒 Kunci sekarang</button>' : '<button class="btn pri" data-act="setpin">🔒 Tetapkan PIN admin</button>') + '</div></div>' +
     '<div class="sec">Data</div>' +
     '<div class="row"><div class="lbl">Set semula semua tetapan dan bahan<small>Padam suntingan, kegemaran dan tetapan pada peranti ini</small></div><button class="btn bad" data-act="resetAll">Set semula semua</button></div>' +
@@ -1953,7 +1953,7 @@ function openHelp(){
     '<div class="sec">Mod</div><div><b>Belajar</b>: langkah demi langkah. <b>Uji Bacaan</b>: perkataan tanpa bantuan; guru tekan Tunjuk Bantuan / Tunjuk Jawapan dan menanda Betul atau Perlu Ulang. <b>Auto</b>: kad bertukar mengikut sela masa 3, 5, 8 atau 10 saat.</div>' +
     '<div class="sec">e pepet dan e taling</div><div>e pepet seperti dalam <i>emak</i>. e taling seperti dalam <i>ekor</i>. Dalam aplikasi ini e taling ditanda <b>é</b> sebagai penanda mengajar sahaja. Ejaan biasa tetap menggunakan e. Matikan penanda ini dalam Tetapan jika tidak mahu.</div>' +
     '<div class="sec">Edit bahan</div><div>Tekan Edit untuk menambah, mengubah, memadam, menyusun semula dan memilih kad. Taip suku kata dengan tanda - (contoh: ba-ju). Jika tiada tanda -, aplikasi mencadangkan pemecahan; sila semak. Gunakan <b>Set Saya</b> untuk set sendiri.</div>' +
-    '<div class="sec">Admin</div><div>Tetapan, Edit Bahan, Rekod Bunyi dan Import / Eksport boleh dikunci dengan PIN admin (Tetapan → Admin). Eksport menyertakan PIN supaya peranti lain yang mengimportnya turut terkunci. Kunci ini melindungi daripada perubahan tidak sengaja dan bukan keselamatan penuh.</div>' +
+    '<div class="sec">Admin</div><div>Tetapan, Edit Bahan dan Import / Eksport boleh dikunci dengan PIN admin (Tetapan → Admin). Rekod Bunyi tidak dikunci. Eksport menyertakan PIN supaya peranti lain yang mengimportnya turut terkunci. Kunci ini melindungi daripada perubahan tidak sengaja dan bukan keselamatan penuh.</div>' +
     '<div class="sec">Sandaran</div><div>Data disimpan dalam pelayar pada peranti ini. Gunakan Import / Eksport untuk memindahkan data ke peranti lain.</div>' +
     '</div></div>');
   ov.addEventListener('click', e => { if(e.target.closest('[data-close]') || e.target === ov) ov.remove(); });
@@ -2191,7 +2191,7 @@ document.addEventListener('click', e => {
     case 'exitTeach': exitTeach(); break;
     case 'fullscreen': toggleFS(); break;
     case 'ptr': togglePtr(); break;
-    case 'rekod': requireAdmin(openRekod); break;
+    case 'rekod': openRekod(); break;
     case 'setpin': requireAdmin(openSetPin); break;
     case 'rmpin': requireAdmin(removePin); break;
     case 'lockadm': lockNow(); break;

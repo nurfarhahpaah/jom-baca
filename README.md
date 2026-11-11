@@ -8,14 +8,14 @@ Untuk kegunaan luar talian, simpan fail ini pada peranti (Save As) dan buka dari
 Pilih modul -> pilih kumpulan (cth. KV – a) -> tekan **Mod Mengajar** (skrin penuh, hanya kad dipaparkan).
 
 Kekunci: Space / ketik skrin = langkah seterusnya (b -> a -> ba); anak panah kiri/kanan = kad;
-atas = langkah sebelumnya; G gabung; S sebut; R ulang; P gambar; F skrin penuh; T mod mengajar; Esc keluar.
+atas = langkah sebelumnya; G gabung; S sebut; R ulang; P gambar; C penunjuk; F skrin penuh; T mod mengajar; Esc keluar.
 
 ## Modul
 1 Vokal · 2 Konsonan (+ b/d, p/q, m/n) · 3 KV (a, i, o, u, e pepet, e taling) · 4 KVKV (pola sama + campuran)
 5 KVK (10 akhiran) · 6 Diftong · 7 Digraf (ng, ny, sy, kh, gh) · Set Saya · Kegemaran
 
 ## Mod
-Belajar (langkah demi langkah) · Uji Bacaan (tanpa bantuan, Betul / Perlu Ulang) · Auto (3/5/8/10 saat) · Senarai kad · Edit Bahan.
+Penunjuk (bulatan, jari atau laser besar untuk menunjuk kepada murid semasa berkongsi skrin) · Belajar (langkah demi langkah) · Uji Bacaan (tanpa bantuan, Betul / Perlu Ulang) · Auto (3/5/8/10 saat) · Senarai kad · Edit Bahan.
 
 ## e pepet dan e taling
 e taling ditanda `é` (penanda mengajar sahaja; ejaan biasa guna `e`). Boleh dimatikan dalam Tetapan.

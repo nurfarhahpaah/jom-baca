@@ -214,6 +214,18 @@ select{width:auto;max-width:100%}
 .nolb{min-width:46px}
 @media (min-width:1500px){.topbar .nolb .lb{display:inline}}
 
+/* Penunjuk guru */
+.ptr{position:fixed;left:0;top:0;z-index:95;pointer-events:none;--ps:1;will-change:transform}
+.ptr.s-sm{--ps:.7}.ptr.s-md{--ps:1}.ptr.s-lg{--ps:1.6}
+.ptr.ring{width:calc(70px*var(--ps));height:calc(70px*var(--ps));margin:calc(-35px*var(--ps)) 0 0 calc(-35px*var(--ps));border-radius:50%;border:calc(7px*var(--ps)) solid #FF2D7A;background:rgba(255,45,122,.16);box-shadow:0 0 0 calc(4px*var(--ps)) rgba(255,255,255,.85),0 0 calc(26px*var(--ps)) rgba(255,45,122,.55)}
+.ptr.laser{width:calc(26px*var(--ps));height:calc(26px*var(--ps));margin:calc(-13px*var(--ps)) 0 0 calc(-13px*var(--ps));border-radius:50%;background:radial-gradient(circle,#fff 0 18%,#FF1744 38%,rgba(255,23,68,.35) 70%,rgba(255,23,68,0) 100%);box-shadow:0 0 calc(22px*var(--ps)) calc(6px*var(--ps)) rgba(255,23,68,.6)}
+.ptr.finger{font-size:calc(84px*var(--ps));line-height:1;margin:calc(-9px*var(--ps)) 0 0 calc(-42px*var(--ps));filter:drop-shadow(0 4px 6px rgba(0,0,0,.3))}
+.ripple{position:fixed;z-index:94;pointer-events:none;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;border:6px solid #FF2D7A;animation:ripple .75s ease-out forwards}
+.ripple.s-sm{width:22px;height:22px;margin:-11px 0 0 -11px}.ripple.s-lg{width:48px;height:48px;margin:-24px 0 0 -24px}
+@keyframes ripple{0%{transform:scale(.6);opacity:.95}100%{transform:scale(3.6);opacity:0}}
+body.ptr-on .board,body.ptr-on .board *{cursor:none!important;touch-action:none}
+.btn.ptrbtn.on{background:#FF2D7A;color:#fff}
+
 </style>
 </head>
 <body>
@@ -391,7 +403,9 @@ const DEFAULT_SETTINGS = {
   color:'two',        // two | black
   mark:true,          // papar é untuk e taling
   audio:true, voice:'', autoSpeak:false,
-  autoSec:5, autoStep:false
+  autoSec:5, autoStep:false,
+  ptrStyle:'ring',    // ring | finger | laser
+  ptrSize:'md'        // sm | md | lg
 };
 let DB = (function(){
   const d = DataSource.load() || {};
@@ -642,7 +656,7 @@ const FAV_MODULE = {id:'fav', no:9, title:'Kegemaran', sample:['★'], color:'#F
 const S = {
   view:'home', modId:null, gid:null, mode:'belajar',
   deck:[], idx:0, step:0, shuffle:false, favOnly:false,
-  ex:false, pic:false, pairTarget:0, teach:false, fsTeach:false,
+  ex:false, pic:false, pairTarget:0, teach:false, fsTeach:false, ptr:false,
   test:{right:0, again:[], done:{}, total:0, finished:false},
   auto:{running:false, timer:null}
 };
@@ -913,18 +927,19 @@ function controlsHTML(){
   let tools = '';
   if(S.mode === 'uji'){
     tools = btn('help','💡','Tunjuk Bantuan','') + btn('answer','👁️','Tunjuk Jawapan','') +
-      btn('right','✔','Betul','ok') + btn('again','↻','Perlu Ulang','bad') + btn('speak','🔊','Sebut','');
+      btn('right','✔','Betul','ok') + btn('again','↻','Perlu Ulang','bad') + btn('ptr','👆','Penunjuk','ptrbtn'+(S.ptr?' on':'')) + btn('speak','🔊','Sebut','');
   } else if(S.mode === 'auto'){
     tools = '<button class="btn pri" data-act="autoToggle" id="autoBtn"><span class="ic">'+(S.auto.running?'⏸':'▶')+'</span><span class="lb">'+(S.auto.running?'Jeda':'Mula')+'</span></button>' +
       btn('autoStop','⏹','Berhenti','') +
       '<span class="tm" role="group" aria-label="Sela masa">' + [3,5,8,10].map(s => '<button data-act="sec" data-v="'+s+'" class="'+(DB.settings.autoSec===s?'on':'')+'">'+s+'s</button>').join('') + '</span>' +
-      btn('autoStep','🪜','Ikut peringkat','sm '+(DB.settings.autoStep?'on':''));
+      btn('autoStep','🪜','Ikut peringkat','sm '+(DB.settings.autoStep?'on':'')) + btn('ptr','👆','Penunjuk','ptrbtn'+(S.ptr?' on':''));
   } else {
     tools = btn('repeat','↻','Ulang','') +
       btn('shuffle','🔀','Rawak','nt '+(S.shuffle?'on':'')) +
       btn('merge','🧩','Gabung','nt', 'id="mergeBtn"') +
       btn('answer','👁️','Papar Jawapan','') +
       btn('pic','🖼️','Tunjuk Gambar','') +
+      btn('ptr','👆','Penunjuk','ptrbtn'+(S.ptr?' on':'')) +
       btn('ex','💬','Contoh','nt '+(S.ex?'on':'')) +
       btn('speak','🔊','Sebut','nolb');
   }
@@ -985,10 +1000,10 @@ function renderPlayer(){
 }
 function bindBoard(){
   const board = $('#board'); let sx = null, sy = 0, st = 0;
-  board.addEventListener('click', e => { if(e.target.closest('button')) return; stepFwd(); });
+  board.addEventListener('click', e => { if(e.target.closest('button')) return; if(S.ptr) return; stepFwd(); });
   board.addEventListener('touchstart', e => { const t = e.changedTouches[0]; sx = t.clientX; sy = t.clientY; st = Date.now(); }, {passive:true});
   board.addEventListener('touchend', e => {
-    if(sx === null) return; const t = e.changedTouches[0]; const dx = t.clientX - sx, dy = t.clientY - sy; sx = null;
+    if(sx === null || S.ptr){ sx = null; return; } const t = e.changedTouches[0]; const dx = t.clientX - sx, dy = t.clientY - sy; sx = null;
     if(Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.5 && Date.now() - st < 700){ e.preventDefault(); go(dx < 0 ? 1 : -1); S.swiped = Date.now(); }
   });
   board.addEventListener('click', e => { if(S.swiped && Date.now() - S.swiped < 400) e.stopImmediatePropagation(); }, true);
@@ -1084,7 +1099,7 @@ window.addEventListener('resize', () => { clearTimeout(window.__rz); window.__rz
 
 /* ---------- Menu utama ---------- */
 function renderHome(){
-  S.view = 'home'; stopAuto();
+  S.view = 'home'; stopAuto(); if(S.ptr) togglePtr(true);
   if(S.teach) exitTeach();
   const mods = getModules();
   const favN = favItems().length;
@@ -1155,6 +1170,51 @@ function openList(){
   });
 }
 
+
+/* ---------- Penunjuk (cursor besar untuk guru menunjuk kepada murid) ---------- */
+const PTR = document.createElement('div'); PTR.id = 'ptr'; PTR.hidden = true; PTR.setAttribute('aria-hidden','true');
+document.body.appendChild(PTR);
+const Ptr = {lx:null, ly:null, hideT:null};
+function ptrApply(){
+  PTR.className = 'ptr ' + DB.settings.ptrStyle + ' s-' + DB.settings.ptrSize;
+  PTR.textContent = DB.settings.ptrStyle === 'finger' ? '👆' : '';
+  document.body.classList.toggle('ptr-on', S.ptr);
+  $$('.ptrbtn').forEach(b => b.classList.toggle('on', S.ptr));
+}
+function ptrPlace(x, y){ PTR.style.transform = 'translate(' + x + 'px,' + y + 'px)'; PTR.hidden = false; }
+function ptrFrom(e){
+  clearTimeout(Ptr.hideT);
+  if(S.view !== 'player' || (e.target.closest && e.target.closest('.cbar,.topbar,.chips-row,.ovl,.prog'))){ PTR.hidden = true; return; }
+  ptrPlace(e.clientX, e.clientY);
+}
+function togglePtr(forceOff){
+  S.ptr = forceOff === true ? false : !S.ptr;
+  ptrApply();
+  if(S.ptr){
+    const bd = $('#board');
+    if(Ptr.lx !== null) ptrPlace(Ptr.lx, Ptr.ly);
+    else if(bd){ const r = bd.getBoundingClientRect(); ptrPlace(r.left + r.width / 2, r.top + r.height / 2); }
+    toast('Penunjuk hidup. Klik atau sentuh untuk menanda. Guna Space atau butang untuk tukar langkah.', 3600);
+  } else PTR.hidden = true;
+}
+function ptrRipple(x, y){
+  const r = document.createElement('div'); r.className = 'ripple s-' + DB.settings.ptrSize;
+  r.style.left = x + 'px'; r.style.top = y + 'px'; document.body.appendChild(r);
+  setTimeout(() => r.remove(), 800);
+}
+document.addEventListener('pointermove', e => { Ptr.lx = e.clientX; Ptr.ly = e.clientY; if(S.ptr) ptrFrom(e); }, {passive:true});
+document.addEventListener('pointerdown', e => {
+  Ptr.lx = e.clientX; Ptr.ly = e.clientY;
+  if(!S.ptr) return;
+  ptrFrom(e);
+  if(e.target.closest && e.target.closest('#board')) ptrRipple(e.clientX, e.clientY);
+}, {passive:true});
+document.addEventListener('pointerup', e => {
+  if(S.ptr && e.pointerType === 'touch'){ clearTimeout(Ptr.hideT); Ptr.hideT = setTimeout(() => { PTR.hidden = true; }, 1400); }
+}, {passive:true});
+document.documentElement.addEventListener('mouseleave', () => { if(S.ptr) PTR.hidden = true; });
+ptrApply();
+
 'use strict';
 /* =====================================================================
    JOM BACA! - Edit bahan, tetapan, panduan, sandaran, acara papan kekunci
@@ -1196,6 +1256,9 @@ function openSettings(){
     '<div class="row"><div class="lbl">Saiz tulisan</div>'+opts('size',[['sm','Kecil'],['md','Sederhana'],['lg','Besar'],['xl','Sangat besar']])+'</div>' +
     '<div class="row"><div class="lbl">Warna suku kata<small>Dua warna membezakan suku kata dan huruf</small></div>'+opts('color',[['two','Dua warna'],['black','Hitam']])+'</div>' +
     '<div class="row"><div class="lbl">Penanda é untuk e taling<small>Ejaan Bahasa Melayu biasa menggunakan e untuk kedua-dua bunyi. é hanya membantu murid membezakan bunyi.</small></div>'+opts('mark',[['true','Papar é'],['false','Papar e biasa']])+'</div>' +
+    '<div class="sec">Penunjuk (untuk menunjuk kepada murid)</div>' +
+    '<div class="row"><div class="lbl">Gaya penunjuk<small>Bulatan, jari atau titik laser. Mudah dilihat apabila berkongsi skrin</small></div>'+opts('ptrStyle',[['ring','Bulatan'],['finger','Jari 👆'],['laser','Laser']])+'</div>' +
+    '<div class="row"><div class="lbl">Saiz penunjuk</div>'+opts('ptrSize',[['sm','Kecil'],['md','Sederhana'],['lg','Besar']])+'</div>' +
     '<div class="sec">Audio bacaan</div>' +
     '<div class="row"><div class="lbl">Audio</div>'+opts('audio',[['true','Hidup'],['false','Mati']])+'</div>' +
     '<div class="row"><div class="lbl">Sebut automatik apabila jawapan dipaparkan</div>'+opts('autoSpeak',[['true','Ya'],['false','Tidak']])+'</div>' +
@@ -1216,6 +1279,7 @@ function openSettings(){
       DB.settings[k] = v; persist();
       $$('[data-set="'+k+'"]', ov).forEach(x => x.classList.toggle('on', x === b));
       if(k === 'audio' && v === false) try { speechSynthesis.cancel(); } catch(x){}
+      if(k === 'ptrStyle' || k === 'ptrSize') ptrApply();
       if(S.view === 'player') renderPlayer(); else renderHome();
     } else if(e.target.closest('[data-close]') || e.target === ov){ ov.remove(); }
   });
@@ -1226,7 +1290,8 @@ function openSettings(){
 function openHelp(){
   const ov = overlay('<div class="modal" role="dialog" aria-label="Panduan"><div class="mh"><h2>Panduan ringkas</h2><button class="btn sm" data-close>✕ Tutup</button></div><div class="mb">' +
     '<div class="sec">Mula mengajar</div><div>Pilih modul, pilih kumpulan (contoh: KV – a), kemudian tekan <b>Mod Mengajar</b>. Skrin penuh dibuka dan hanya kad dipaparkan. Kongsi skrin melalui Google Meet atau Zoom.</div>' +
-    '<div class="sec">Kekunci</div><div class="note info"><b>Space</b> atau ketik skrin: langkah seterusnya (b → a → ba). Jika langkah habis, kad seterusnya dibuka.<br><b>← →</b>: kad sebelumnya / seterusnya &nbsp; <b>↑</b>: langkah sebelumnya<br><b>G</b>: gabung &nbsp; <b>S</b>: sebut &nbsp; <b>R</b>: ulang &nbsp; <b>P</b>: tunjuk gambar &nbsp; <b>F</b>: skrin penuh &nbsp; <b>Esc</b>: keluar</div>' +
+    '<div class="sec">Kekunci</div><div class="note info"><b>Space</b> atau ketik skrin: langkah seterusnya (b → a → ba). Jika langkah habis, kad seterusnya dibuka.<br><b>← →</b>: kad sebelumnya / seterusnya &nbsp; <b>↑</b>: langkah sebelumnya<br><b>G</b>: gabung &nbsp; <b>S</b>: sebut &nbsp; <b>R</b>: ulang &nbsp; <b>P</b>: tunjuk gambar &nbsp; <b>C</b>: penunjuk &nbsp; <b>F</b>: skrin penuh &nbsp; <b>Esc</b>: keluar</div>' +
+    '<div class="sec">Penunjuk</div><div>Tekan <b>Penunjuk</b> (atau C) untuk memaparkan bulatan, jari atau laser yang besar mengikut tetikus atau jari guru. Klik atau sentuh meninggalkan tanda berkelip. Semasa penunjuk hidup, ketik skrin tidak menukar langkah; gunakan Space atau butang.</div>' +
     '<div class="sec">Mod</div><div><b>Belajar</b>: langkah demi langkah. <b>Uji Bacaan</b>: perkataan tanpa bantuan; guru tekan Tunjuk Bantuan / Tunjuk Jawapan dan menanda Betul atau Perlu Ulang. <b>Auto</b>: kad bertukar mengikut sela masa 3, 5, 8 atau 10 saat.</div>' +
     '<div class="sec">e pepet dan e taling</div><div>e pepet seperti dalam <i>emak</i>. e taling seperti dalam <i>ekor</i>. Dalam aplikasi ini e taling ditanda <b>é</b> sebagai penanda mengajar sahaja. Ejaan biasa tetap menggunakan e. Matikan penanda ini dalam Tetapan jika tidak mahu.</div>' +
     '<div class="sec">Edit bahan</div><div>Tekan Edit untuk menambah, mengubah, memadam, menyusun semula dan memilih kad. Taip suku kata dengan tanda - (contoh: ba-ju). Jika tiada tanda -, aplikasi mencadangkan pemecahan; sila semak. Gunakan <b>Set Saya</b> untuk set sendiri.</div>' +
@@ -1457,6 +1522,7 @@ document.addEventListener('click', e => {
     case 'teach': enterTeach(); break;
     case 'exitTeach': exitTeach(); break;
     case 'fullscreen': toggleFS(); break;
+    case 'ptr': togglePtr(); break;
     case 'right': mark(true); break;
     case 'again': mark(false); break;
     case 'autoToggle': autoToggle(); break;
@@ -1489,6 +1555,7 @@ document.addEventListener('keydown', e => {
   else if(k === 's' || k === 'S') speakStage();
   else if(k === 'r' || k === 'R'){ S.step = 0; S.ex = false; S.pic = false; refresh(); }
   else if(k === 'p' || k === 'P'){ const pb = $('[data-act="pic"]'); if(pb) pb.click(); }
+  else if(k === 'c' || k === 'C') togglePtr();
   else if(k === 'f' || k === 'F') toggleFS();
   else if(k === 't' || k === 'T'){ S.teach ? exitTeach() : enterTeach(); }
 });
